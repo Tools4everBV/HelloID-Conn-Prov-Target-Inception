@@ -166,7 +166,7 @@ Besides the configuration tab, you can also configure script variables. To decid
 
 > _For more information on how to configure a HelloID PowerShell connector, please refer to our [documentation](https://docs.helloid.com/hc/en-us/articles/360012558020-Configure-a-custom-PowerShell-target-system) pages_
 
-> _If you need help, feel free to ask questions on our [forum](https://forum.helloid.com)_
+> _If you need help, feel free to ask questions on our [forum](https://forum.helloid.com/forum/helloid-connectors/provisioning/4792-helloid-conn-prov-target-inception)
 
 ## HelloID docs
 
