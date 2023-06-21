@@ -33,7 +33,7 @@
 
 ## Introduction
 
-_HelloID-Conn-Prov-Target-Inception_ is a _target_ connector. Inception provides a set of REST API's that allow you to programmatically interact with its data. The connector manages creating and updating employees and their linked user accounts. It is also capable of dynamically calculating positions and organization units for the employees in Inception.
+_HelloID-Conn-Prov-Target-Inception_ is a _target_ connector. Inception provides a set of REST APIs that allow you to programmatically interact with its data. The connector manages creating and updating employees and their linked user accounts. It is also capable of dynamically calculating positions and organization units for the employees in Inception.
 
 The following lifecycle events are available:
 
@@ -41,8 +41,8 @@ The following lifecycle events are available:
 |---	 |---	|---	|
 | create.ps1 | Create (or update) and correlate an Employee Account and dynamically assign the Positions | *Calculated over the contracts in scope* |
 | update.ps1 | Update the Employee Account and dynamically update the Positions | *Calculated over the contracts in scope* |
-| enable.ps1 | Enable the Employee Account and Create a User account | - |
-| disable.ps1 | Disable the Employee Account and Delete a User account | - |
+| enable.ps1 | Enable the Employee Account and Create a User Account | - |
+| disable.ps1 | Disable the Employee Account and Delete a User Account | - |
 | delete.ps1 | Disable the Employee Account *(If still required)* and Remove HelloID assigned Positions | Only HelloId assigned Position are removed |
 | resource.ps1 | Additional script to create missing Organization Units and Positions in Inception | - |
 
@@ -64,12 +64,12 @@ The following settings are required to connect to the API.
  - API Connection settings
  - Inception Dummy Position and Organization Unit :information_source: *See [Positions](#positions)*
  - Custom properties or complex mapping to create a combination of title and department. :information_source: *See [Remarks Resources](#remarks-resources)*
- - An Inception custom overview to retrieve employees that can be filtered based on the Staffnumber. *See [General](#general)*
+ - An Inception custom overview to retrieve employees that can be filtered based on the staff number. *See [General](#general)*
 
 
 ### Remarks
 #### General
- - In the account creation process, the newly created accounts are disabled afterward using an additional web call. This is necessary because the webservice does not support creating accounts in a disabled state. However, if an account already exists, the connector does not perform a disable action to avoid unintended behavior.
+ - In the account creation process, the newly created accounts are disabled afterward using an additional web call. This is necessary because the web service does not support creating accounts in a disabled state. However, if an account already exists, the connector does not perform a disable action to avoid unintended behavior.
 - The connector utilizes a custom overview call to retrieve a list of employees. This is necessary because the original web call to retrieve employee data takes 30-60 seconds, which is not feasible in HelloID. The custom overview call includes an ID that may differ between customers, so it is added as a script variable in the Create action.
     ```Powershell
       # Script Configuration
@@ -102,15 +102,15 @@ The following settings are required to connect to the API.
 </p>
 
 #### Remarks Resources
-- :warning: The value's in the resouce script need to correspond to the lookup field in the configuration.
+- :warning: The value's in the resource script need to correspond to the lookup field in the configuration.
 - The resource script creates orgUnits and positions in Inception.
-- The resource script linkes the orgUnit to the right position, thats why there are linking custom properties.
+- The resource script links the orgUnit to the right position, that's why there are linking custom properties.
 - The resource script does not disable or delete orgUnits or positions.
-- The resource script checks if the object in $rRef has an departmentCode otherwise the object contains different custom fields.
-- When a orgUnit or position has a state of 30 (inactive) in the target system we update it to 20 (active) to activate that orgUnit or position.
-- Create Custom field To create linking table between departments and titles.
-- The resource script uses the custom properties DepartmentCode, DepartmentName, TitleCode, TitleDescription. for more information on custom properties please refer to our [docs](https://docs.helloid.com/en/provisioning/persons/person-schema/add-a-custom-person-or-contract-field.html) page. see 1st image.
-- Map the custom fields to the correct value's in the source system. see 2nd image.
+- The resource script checks if the object in $rRef has a department code otherwise the object contains different custom fields.
+- When an orgUnit or position has a state of 30 (inactive) in the target system we update it to 20 (active) to activate that orgUnit or position.
+- Create a Custom field To create a linking table between departments and titles.
+- The resource script uses the custom properties DepartmentCode, DepartmentName, TitleCode, and TitleDescription. For more information on custom properties please refer to our [docs](https://docs.helloid.com/en/provisioning/persons/person-schema/add-a-custom-person-or-contract-field.html) page. see 1st image.
+- Map the custom fields to the correct values in the source system. See 2nd image.
 - Using multiple custom fields in the resource script is possible by selecting the whole custom object when configuring the resource script. See 3rd image.
 <p>
   <img src="assets/CustomFields.PNG">
@@ -119,11 +119,11 @@ The following settings are required to connect to the API.
   <img src="assets/CustomFieldsMapping.PNG">
 </p>
 <p>
-  <img src="assets/ResouceConfiguration.PNG">
+  <img src="assets/ResourceConfiguration.PNG">
 </p>
 
 
-#### Creation / correlation process
+#### Creation/correlation process
 
 A new functionality is the possibility to update the account in the target system during the correlation process. By default, this behavior is disabled. Meaning, the account will only be created or correlated.
 
