@@ -113,13 +113,13 @@ The following settings are required to connect to the API.
 - Map the custom fields to the correct value's in the source system. see 2nd image.
 - Using multiple custom fields in the resource script is possible by selecting the whole custom object when configuring the resource script. See 3rd image.
 <p>
-  <img src="assets/CustomFields.png">
+  <img src="assets/CustomFields.PNG">
 </p>
 <p>
-  <img src="assets/CustomFieldsMapping.png">
+  <img src="assets/CustomFieldsMapping.PNG">
 </p>
 <p>
-  <img src="assets/ResouceConfiguration.png">
+  <img src="assets/ResouceConfiguration.PNG">
 </p>
 
 
