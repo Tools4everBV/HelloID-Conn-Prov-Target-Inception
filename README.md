@@ -135,7 +135,7 @@ You can change this behavior in the `create.ps1` by setting the boolean `$update
 
 > _How to setup the connector in HelloID._
 <p>
-  <img src="assets/Position.png">
+  <img src="assets/Configuration.png">
 </p>
 
 Besides the configuration tab, you can also configure script variables. To decide which property from a HelloId contract is used to look up a value. Please note that some "same" configuration must be taken place in multiple scripts. Shown as below:
