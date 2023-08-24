@@ -1,7 +1,7 @@
 ###########################################
 # HelloID-Conn-Prov-Target-Inception-Enable
 #
-# Version: 1.0.0
+# Version: 1.0.1
 ###########################################
 # Initialize default values
 $config = $configuration | ConvertFrom-Json
@@ -10,13 +10,6 @@ $aRef = $AccountReference | ConvertFrom-Json
 $success = $false
 $auditLogs = [System.Collections.Generic.List[PSCustomObject]]::new()
 
-$accountUser = [PSCustomObject]@{
-    id       = $aRef.AccountReference
-    type     = 14
-    name     = $p.Contact.Business.Email # UPN
-    password = 'M*U*&)H)*&hasdc32' # Only used with new creations. Proprety is mandatory but is not used when using SSO.
-}
-
 # Enable TLS1.2
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
 
@@ -24,6 +17,11 @@ $accountUser = [PSCustomObject]@{
 switch ($($config.IsDebug)) {
     $true { $VerbosePreference = 'Continue' }
     $false { $VerbosePreference = 'SilentlyContinue' }
+}
+
+function Get-RandomCharacters($length, $characters) { 
+    $random = 1..$length | ForEach-Object { Get-Random -Maximum $characters.length }
+    return [String]$characters[$random]
 }
 
 #region functions
@@ -46,7 +44,8 @@ function Get-InceptionToken {
         $tokenResponse = Invoke-RestMethod @splatTokenParams -Verbose:$false
 
         Write-Output $tokenResponse.Token
-    } catch {
+    }
+    catch {
         $PSCmdlet.ThrowTerminatingError($_)
     }
 }
@@ -70,7 +69,8 @@ function Resolve-InceptionError {
             $httpErrorObj.ErrorDetails = $ErrorObject.ErrorDetails
             $httpErrorObj.FriendlyMessage = $ErrorObject.ErrorDetails
             $webresponse = $true
-        } elseif ((-not($null -eq $ErrorObject.Exception.Response) -and $ErrorObject.Exception.GetType().FullName -eq 'System.Net.WebException')) {
+        }
+        elseif ((-not($null -eq $ErrorObject.Exception.Response) -and $ErrorObject.Exception.GetType().FullName -eq 'System.Net.WebException')) {
             $streamReaderResponse = [System.IO.StreamReader]::new($ErrorObject.Exception.Response.GetResponseStream()).ReadToEnd()
             if (-not([string]::IsNullOrWhiteSpace($streamReaderResponse))) {
                 $httpErrorObj.ErrorDetails = $streamReaderResponse
@@ -83,10 +83,12 @@ function Resolve-InceptionError {
                 $convertedErrorObject = ($httpErrorObj.FriendlyMessage | ConvertFrom-Json)
                 if (-not [string]::IsNullOrEmpty($convertedErrorObject.languageString)) {
                     $httpErrorObj.FriendlyMessage = $convertedErrorObject.LanguageString
-                } elseif (-not [string]::IsNullOrEmpty($convertedErrorObject.description)) {
+                }
+                elseif (-not [string]::IsNullOrEmpty($convertedErrorObject.description)) {
                     $httpErrorObj.FriendlyMessage = $convertedErrorObject.Description
                 }
-            } catch {
+            }
+            catch {
                 Write-Warning "Unexpected webservice response, Error during Json conversion: $($_.Exception.Message)"
             }
         }
@@ -94,6 +96,13 @@ function Resolve-InceptionError {
     }
 }
 #endregion
+
+$accountUser = [PSCustomObject]@{
+    id       = $aRef.AccountReference
+    type     = 14
+    name     = $p.Contact.Business.Email # UPN
+    password = (Get-RandomCharacters -length 10 -characters 'abcdefghijklmnopqrstuvwxyzABCDEFGHKLMNOPRSTUVWXYZ1234567890!@#%&+{}') # Only used with new creations. Proprety is mandatory but is not used when using SSO.
+}
 
 # Begin
 try {
@@ -117,7 +126,8 @@ try {
         }
         $employee = Invoke-RestMethod @splatUserParams -Verbose:$false
         $employeeFound = $true
-    } catch {
+    }
+    catch {
         if ( $_.Exception.message -notmatch '404' ) {
             throw $_
         }
@@ -134,7 +144,8 @@ try {
         }
         $user = Invoke-RestMethod @splatUserParams -Verbose:$false
         $userFound = $true
-    } catch {
+    }
+    catch {
         if ( $_.Exception.message -notmatch '404' ) {
             throw $_
         }
@@ -147,7 +158,8 @@ try {
         Write-Warning "[DryRun] Enable Inception Employee account for: [$($p.DisplayName)] will be executed during enforcement"
         if ($userFound) {
             Write-Warning "[DryRun] Enable Inception User account for: [$($p.DisplayName)] will be executed during enforcement"
-        } else {
+        }
+        else {
             Write-Warning "[DryRun] Create Inception User account for: [$($p.DisplayName)] will be executed during enforcement"
         }
     }
@@ -184,7 +196,8 @@ try {
             }
             $user = Invoke-RestMethod @splatEnableUser -Verbose:$false
             $userAuditMessage = 'Enable User account'
-        } else {
+        }
+        else {
             Write-Verbose 'Creating new User account'
             $splatNewUser = @{
                 Uri     = "$($config.BaseUrl)/api/v2/security/users"
@@ -201,7 +214,8 @@ try {
             })
     }
     $success = $true
-} catch {
+}
+catch {
     $success = $false
     $ex = $PSItem
     if ($($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or
@@ -209,7 +223,8 @@ try {
         $errorObj = Resolve-InceptionError -ErrorObject $ex
         $auditMessage = "Could not enable Inception account. Error: $($errorObj.FriendlyMessage)"
         Write-Verbose "Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
-    } else {
+    }
+    else {
         $auditMessage = "Could not enable Inception account. Error: $($ex.Exception.Message)"
         Write-Verbose "Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)"
     }
@@ -221,7 +236,8 @@ try {
             IsError = $true
         })
     # End
-} finally {
+}
+finally {
     $result = [PSCustomObject]@{
         Success   = $success
         Auditlogs = $auditLogs

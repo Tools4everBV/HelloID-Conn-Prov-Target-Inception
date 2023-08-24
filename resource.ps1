@@ -1,7 +1,7 @@
 #############################################
 # HelloID-Conn-Prov-Target-Inception-Resource
 #
-# Version: 1.0.0
+# Version: 1.0.1
 #############################################
 # Initialize default values
 $config = $configuration | ConvertFrom-Json
@@ -9,7 +9,13 @@ $rRef = $resourceContext | ConvertFrom-Json
 $success = $false
 $auditLogs = [System.Collections.Generic.List[PSCustomObject]]::new()
 
-$rRef.sourceData = ($rRef.sourceData | Where-Object { -not [string]::IsNullOrEmpty($_.DepartmentCode) })
+# Mapping Custom Fields in case of not using Github example customfieldnames
+$DepartmentCode = 'DepartmentCode'
+$DepartmentDescription = 'DepartmentDescription'
+$TitleCode = 'TitleCode'
+$TitleDescription = 'TitleDescription'
+
+$rRef.sourceData = ($rRef.sourceData | Where-Object { -not [string]::IsNullOrEmpty($_.$DepartmentCode) })
 
 # Enable TLS1.2
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
@@ -166,12 +172,12 @@ try {
             $positions = Get-InceptionPositions -Headers $headers
 
             foreach ($orgUnit in $rRef.sourceData) {
-                $targetOrgUnit = ($OrgUnits | Where-Object -Property code -eq $orgunit.DepartmentCode)
+                $targetOrgUnit = ($OrgUnits | Where-Object -Property code -eq $orgunit.$DepartmentCode)
                 if ($targetOrgUnit.count -eq 0) {
                     $body = @{
-                        code        = $orgUnit.DepartmentCode
-                        name        = $orgUnit.DepartmentCode
-                        description = $orgUnit.DepartmentName
+                        code        = $orgUnit.$DepartmentCode
+                        name        = $orgUnit.$DepartmentDescription
+                        description = $orgUnit.$DepartmentDescription
                         state       = 20
                     }
                     $splatCreateOrgunitParams = @{
@@ -185,11 +191,11 @@ try {
                     $OrgUnits += $orgunitsResponse
 
                     $auditLogs.Add([PSCustomObject]@{
-                            Message = "Created orgUnit: [$($orgUnit.DepartmentCode)]"
+                            Message = "Created orgUnit: [$($orgUnit.$DepartmentCode)]"
                             IsError = $false
                         })
                 } else {
-                    $orgUnit = $OrgUnits | Where-Object -Property code -eq $orgunit.DepartmentCode
+                    $orgUnit = $OrgUnits | Where-Object -Property code -eq $orgunit.$DepartmentCode
                     if ($orgUnit.state -ne 20) {
                         $body = @{
                             state = 20
@@ -208,21 +214,21 @@ try {
             }
 
             $groupedOrgUnits = $OrgUnits | Group-Object -Property code -AsString -AsHashTable
-            $groupedPositions = $rRef.SourceData | Group-Object -Property TitleCode -AsString -AsHashTable
+            $groupedPositions = $rRef.SourceData | Group-Object -Property $TitleCode -AsString -AsHashTable
 
             foreach ($key in $groupedPositions.Keys) {
                 $targetPosition = $positions | Where-Object -Property code -eq $key
                 $departmentIds = @()
                 foreach ($department in $groupedPositions[$key]) {
-                    $departmentIds += ($groupedOrgUnits[$department.DepartmentCode].id)
+                    $departmentIds += ($groupedOrgUnits[$department.$DepartmentCode].id)
                 }
                 $departmentIds = [array] ($departmentIds | Select-Object -Unique)
                 $currentPosition = $groupedPositions[$key] | Select-Object -First 1
                 if ($targetPosition.count -eq 0) {
                     $body = @{
-                        code              = $currentPosition.TitleCode
-                        name              = $currentPosition.TitleCode
-                        description       = $currentPosition.TitleDescription
+                        code              = $currentPosition.$TitleCode
+                        name              = $currentPosition.$TitleDescription
+                        description       = $currentPosition.$TitleDescription
                         state             = 20
                         belongstoorgunits = $departmentIds
                     }
@@ -238,7 +244,7 @@ try {
                     $positions += $positionsResponse
 
                     $auditLogs.Add([PSCustomObject]@{
-                            Message = "Created position: [$($currentPosition.TitleCode)] with orgunits: [$($departmentIds)]"
+                            Message = "Created position: [$($currentPosition.$TitleCode)] with orgunits: [$($departmentIds)]"
                             IsError = $false
                         })
                 } else {
@@ -260,7 +266,7 @@ try {
                         }
                         $positionsResponse = Invoke-RestMethod @splatUpdatePositionsParams -Verbose:$false # Exception not found
                         $auditLogs.Add([PSCustomObject]@{
-                                Message = "Added orgunits: [$($allOrgUnitIdsForPosition)] to position: [$($currentPosition.TitleCode)]"
+                                Message = "Added orgunits: [$($allOrgUnitIdsForPosition)] to position: [$($currentPosition.$TitleCode)]"
                                 IsError = $false
                             })
 
@@ -279,7 +285,7 @@ try {
                             }
                             $positionsResponse = Invoke-RestMethod @splatUpdatePositionsParams -Verbose:$false # Exception not found
                         } else {
-                            Write-Verbose 'skipping action orgunit already added to position'
+                            Write-Verbose "skipping action orgunit already added to position [$($currentPosition.$TitleCode)]"
                         }
                     }
                 }

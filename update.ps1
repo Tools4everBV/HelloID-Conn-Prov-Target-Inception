@@ -1,7 +1,7 @@
 ###########################################
 # HelloID-Conn-Prov-Target-Inception-Update
 #
-# Version: 1.0.0
+# Version: 1.0.1
 ###########################################
 # Initialize default values
 $config = $configuration | ConvertFrom-Json
@@ -10,6 +10,52 @@ $aRef = $AccountReference | ConvertFrom-Json
 $success = $false
 $auditLogs = [System.Collections.Generic.List[PSCustomObject]]::new()
 
+#Generate surname conform nameconvention
+function Get-LastName {
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [object]
+        $person
+    )
+
+    if ([string]::IsNullOrEmpty($person.Name.FamilyNamePrefix)) {
+        $prefix = ""
+    }
+    else {
+        $prefix = $person.Name.FamilyNamePrefix + " "
+    }
+
+    if ([string]::IsNullOrEmpty($person.Name.FamilyNamePartnerPrefix)) {
+        $partnerPrefix = ""
+    }
+    else {
+        $partnerPrefix = $person.Name.FamilyNamePartnerPrefix + " "
+    }
+
+    $Surname = switch ($person.Name.Convention) {
+        "B" { $person.Name.FamilyName }
+        "BP" { $person.Name.FamilyName + " - " + $partnerprefix + $person.Name.FamilyNamePartner }
+        "P" { $person.Name.FamilyNamePartner }
+        "PB" { $person.Name.FamilyNamePartner + " - " + $prefix + $person.Name.FamilyName }
+        default { $prefix + $person.Name.FamilyName }
+    }
+
+    $Prefix = switch ($p.Name.Convention) {
+        "B" { $prefix }
+        "BP" { $prefix }
+        "P" { $partnerPrefix }
+        "PB" { $partnerPrefix }
+        default { $prefix }
+    }
+    $output = [PSCustomObject]@{
+        surname  = $Surname
+        prefixes = $Prefix.Trim()
+    }
+    Write-Output $output
+}
+
 # Script Configuration
 $departmentLookupProperty = { $_.Department.ExternalId }
 $titleLookupProperty = { $_.Title.ExternalId }
@@ -17,9 +63,9 @@ $titleLookupProperty = { $_.Title.ExternalId }
 # Employee Account mapping
 $account = [PSCustomObject]@{
     staffnumber          = $p.ExternalId
-    firstname            = $p.Name.GivenName
-    lastname             = $p.Name.FamilyName
-    middlename           = $p.Name.FamilyNamePrefix
+    firstname            = $p.Name.NickName
+    lastname             = (Get-LastName -Person $p).surname
+    middlename           = (Get-LastName -Person $p).prefixes    
     initials             = $p.Name.Initials
     email                = $p.Contact.Business.Email
     phone                = $p.Contact.Business.Phone.Fixed
@@ -58,7 +104,8 @@ function Get-InceptionToken {
         $tokenResponse = Invoke-RestMethod @splatTokenParams -Verbose:$false
 
         Write-Output $tokenResponse.Token
-    } catch {
+    }
+    catch {
         $PSCmdlet.ThrowTerminatingError($_)
     }
 }
@@ -102,14 +149,16 @@ function Update-PositionsPerOrgUnitsList {
                     if ($DryRunFlag -eq $true) {
                         Write-Warning "[DryRun] Added Position [OrgUnit: $($currentObject.orgunitid) Position: $($currentObject.positionid)]"
                     }
-                } else {
+                }
+                else {
                     if ($DryRunFlag -eq $true) {
                         Write-Warning "[DryRun] Calculated Position already exists [OrgUnit: $($currentObject.orgunitid) Position: $($currentObject.positionid)]"
                     }
 
                 }
 
-            } elseif ($compareResultItem.SideIndicator -eq '<=' ) {
+            }
+            elseif ($compareResultItem.SideIndicator -eq '<=' ) {
                 $itemToRemove = $CurrentPositionsInInception | Where-Object { $_.positionid -eq $compareResultItem.positionid -and $_.orgunitid -eq $compareResultItem.orgunitid }
                 if (-not [string]::IsNullOrEmpty($itemToRemove)) {
                     Write-Verbose "Removing Position [$($itemToRemove)] from Employee"
@@ -118,7 +167,8 @@ function Update-PositionsPerOrgUnitsList {
                             Message = "Removed Position [OrgUnit: $($compareResultItem.OrgunitName) Position: $($compareResultItem.PositionName)]"
                             IsError = $false
                         })
-                } else {
+                }
+                else {
                     if ($DryRunFlag -eq $true) {
                         Write-Warning "[DryRun] Previously assigned Position [$($compareResultItem | Select-Object * -ExcludeProperty SideIndicator)] is already removed from Employee"
                     }
@@ -126,7 +176,8 @@ function Update-PositionsPerOrgUnitsList {
             }
         }
         Write-Output $CurrentPositionsInInception | Select-Object positionid, orgunitid
-    } catch {
+    }
+    catch {
         $PSCmdlet.ThrowTerminatingError($_)
     }
 }
@@ -150,7 +201,8 @@ function Resolve-InceptionError {
             $httpErrorObj.ErrorDetails = $ErrorObject.ErrorDetails
             $httpErrorObj.FriendlyMessage = $ErrorObject.ErrorDetails
             $webresponse = $true
-        } elseif ((-not($null -eq $ErrorObject.Exception.Response) -and $ErrorObject.Exception.GetType().FullName -eq 'System.Net.WebException')) {
+        }
+        elseif ((-not($null -eq $ErrorObject.Exception.Response) -and $ErrorObject.Exception.GetType().FullName -eq 'System.Net.WebException')) {
             $streamReaderResponse = [System.IO.StreamReader]::new($ErrorObject.Exception.Response.GetResponseStream()).ReadToEnd()
             if (-not([string]::IsNullOrWhiteSpace($streamReaderResponse))) {
                 $httpErrorObj.ErrorDetails = $streamReaderResponse
@@ -163,10 +215,12 @@ function Resolve-InceptionError {
                 $convertedErrorObject = ($httpErrorObj.FriendlyMessage | ConvertFrom-Json)
                 if (-not [string]::IsNullOrEmpty($convertedErrorObject.languageString)) {
                     $httpErrorObj.FriendlyMessage = $convertedErrorObject.LanguageString
-                } elseif (-not [string]::IsNullOrEmpty($convertedErrorObject.description)) {
+                }
+                elseif (-not [string]::IsNullOrEmpty($convertedErrorObject.description)) {
                     $httpErrorObj.FriendlyMessage = $convertedErrorObject.Description
                 }
-            } catch {
+            }
+            catch {
                 Write-Warning "Unexpected webservice response, Error during Json conversion: $($_.Exception.Message)"
             }
         }
@@ -201,7 +255,8 @@ function Get-InceptionPosition {
         }until ( $positions.count -eq $positionsResponse.total )
         Write-Output $positions
 
-    } catch {
+    }
+    catch {
         $PSCmdlet.ThrowTerminatingError($_)
     }
 }
@@ -233,7 +288,8 @@ function Get-InceptionOrgunit {
         }until ( $orgunits.count -eq $orgunitsResponse.total )
         Write-Output $orgunits
 
-    } catch {
+    }
+    catch {
         $PSCmdlet.ThrowTerminatingError($_)
     }
 }
@@ -315,7 +371,8 @@ function Get-InceptionIdsFromHelloIdContact {
             throw 'No Position Found'
         }
         Write-Output $desiredPositionList
-    } catch {
+    }
+    catch {
         $PSCmdlet.ThrowTerminatingError($_)
     }
 }
@@ -341,7 +398,8 @@ try {
         }
         $employee = Invoke-RestMethod @splatUserParams -Verbose:$false
         $employeeFound = $true
-    } catch {
+    }
+    catch {
         if ( $_.Exception.message -notmatch '404' ) {
             throw $_
         }
@@ -386,17 +444,20 @@ try {
     if ($null -ne (Compare-Object $positionsPerOrgUnits $employee.positionsPerOrgUnits)) {
         Write-Verbose 'Position update required'
         $positionsAction = 'Update'
-    } else {
+    }
+    else {
         $positionsAction = 'NoChanges'
     }
 
     if (($propertiesChanged -or $positionsAction -eq 'Update' ) -and ($employeeFound)) {
         $action = 'Update'
         $dryRunMessage = "Account property(s) required to update: [$($propertiesChanged.name -join ',')]"
-    } elseif (-not($propertiesChanged) -and ($employeeFound)) {
+    }
+    elseif (-not($propertiesChanged) -and ($employeeFound)) {
         $action = 'NoChanges'
         $dryRunMessage = 'No changes will be made to the account during enforcement'
-    } elseif (-not $employeeFound) {
+    }
+    elseif (-not $employeeFound) {
         $action = 'NotFound'
         $dryRunMessage = "Inception account for: [$($p.DisplayName)] not found. Possibly deleted"
     }
@@ -461,7 +522,8 @@ try {
             }
         }
     }
-} catch {
+}
+catch {
     $success = $false
     $ex = $PSItem
     if ($($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or
@@ -469,7 +531,8 @@ try {
         $errorObj = Resolve-InceptionError -ErrorObject $ex
         $auditMessage = "Could not update Inception account. Error: $($errorObj.FriendlyMessage)"
         Write-Verbose "Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
-    } else {
+    }
+    else {
         $auditMessage = "Could not update Inception account. Error: $($ex.Exception.Message)"
         Write-Verbose "Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)"
     }
@@ -478,7 +541,8 @@ try {
             IsError = $true
         })
     # End
-} finally {
+}
+finally {
     $accountReferenceObject = @{
         AccountReference = $aRef.AccountReference
         Positions        = $desiredPositionList | Select-Object * -ExcludeProperty SideIndicator
