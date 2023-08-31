@@ -69,11 +69,6 @@ The following settings are required to connect to the API.
 ### Remarks
 #### General
  - In the account creation process, the newly created accounts are disabled afterward using an additional web call. This is necessary because the web service does not support creating accounts in a disabled state. However, if an account already exists, the connector does not perform a disable action to avoid unintended behavior.
-- The connector utilizes a custom overview call to retrieve a list of employees. This is necessary because the original web call to retrieve employee data takes 30-60 seconds, which is not feasible in HelloID. The custom overview call includes an ID that may differ between customers, so it is added as a script variable in the Create action.
-    ```Powershell
-      # Script Configuration
-      $employeeOverviewId = '1000000'
-    ```
 - The end date on the employee and account is informational. The employee account has an active/inactive state, and the user account can be either deleted or created. Therefore, the end date is not actively used unless an object already has an end date, in which case the end date is cleared.
 - The relationship between the employee and user is 1 = 1. The employee object is managed throughout its entire lifecycle, while the user object is only managed during Enable and Disable process. Where the object is Created or Deleted.
 - The password is a mandatory value according to the webservice, even if it is not utilized due to Single Sign-On (SSO) being in place.
@@ -144,7 +139,6 @@ Besides the configuration tab, you can also configure script variables. To decid
 
 ``` Powershell
   # Script Configuration
-  $employeeOverviewId = '1000000'
   $departmentLookupProperty = { $_.Department.ExternalId }
   $titleLookupProperty = { $_.Title.ExternalId }
 ```

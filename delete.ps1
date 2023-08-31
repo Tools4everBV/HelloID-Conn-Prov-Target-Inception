@@ -1,7 +1,7 @@
 ###########################################
 # HelloID-Conn-Prov-Target-Inception-Delete
 #
-# Version: 1.0.0
+# Version: 1.0.1
 ###########################################
 # Initialize default values
 $config = $configuration | ConvertFrom-Json
@@ -39,7 +39,8 @@ function Get-InceptionToken {
         $tokenResponse = Invoke-RestMethod @splatTokenParams -Verbose:$false
 
         Write-Output $tokenResponse.Token
-    } catch {
+    }
+    catch {
         $PSCmdlet.ThrowTerminatingError($_)
     }
 }
@@ -83,14 +84,16 @@ function Update-PositionsPerOrgUnitsList {
                     if ($DryRunFlag -eq $true) {
                         Write-Warning "[DryRun] Added Position [OrgUnit: $($currentObject.orgunitid) Position: $($currentObject.positionid)]"
                     }
-                } else {
+                }
+                else {
                     if ($DryRunFlag -eq $true) {
                         Write-Warning "[DryRun] Calculated Position already exists [OrgUnit: $($currentObject.orgunitid) Position: $($currentObject.positionid)]"
                     }
 
                 }
 
-            } elseif ($compareResultItem.SideIndicator -eq '<=' ) {
+            }
+            elseif ($compareResultItem.SideIndicator -eq '<=' ) {
                 $itemToRemove = $CurrentPositionsInInception | Where-Object { $_.positionid -eq $compareResultItem.positionid -and $_.orgunitid -eq $compareResultItem.orgunitid }
                 if (-not [string]::IsNullOrEmpty($itemToRemove)) {
                     Write-Verbose "Removing Position [$($itemToRemove)] from Employee"
@@ -99,7 +102,8 @@ function Update-PositionsPerOrgUnitsList {
                             Message = "Removed Position [OrgUnit: $($compareResultItem.OrgunitName) Position: $($compareResultItem.PositionName)]"
                             IsError = $false
                         })
-                } else {
+                }
+                else {
                     if ($DryRunFlag -eq $true) {
                         Write-Warning "[DryRun] Previously assigned Position [$($compareResultItem | Select-Object * -ExcludeProperty SideIndicator)] is already removed from Employee"
                     }
@@ -107,7 +111,8 @@ function Update-PositionsPerOrgUnitsList {
             }
         }
         Write-Output $CurrentPositionsInInception | Select-Object positionid, orgunitid
-    } catch {
+    }
+    catch {
         $PSCmdlet.ThrowTerminatingError($_)
     }
 }
@@ -131,7 +136,8 @@ function Resolve-InceptionError {
             $httpErrorObj.ErrorDetails = $ErrorObject.ErrorDetails
             $httpErrorObj.FriendlyMessage = $ErrorObject.ErrorDetails
             $webresponse = $true
-        } elseif ((-not($null -eq $ErrorObject.Exception.Response) -and $ErrorObject.Exception.GetType().FullName -eq 'System.Net.WebException')) {
+        }
+        elseif ((-not($null -eq $ErrorObject.Exception.Response) -and $ErrorObject.Exception.GetType().FullName -eq 'System.Net.WebException')) {
             $streamReaderResponse = [System.IO.StreamReader]::new($ErrorObject.Exception.Response.GetResponseStream()).ReadToEnd()
             if (-not([string]::IsNullOrWhiteSpace($streamReaderResponse))) {
                 $httpErrorObj.ErrorDetails = $streamReaderResponse
@@ -144,10 +150,12 @@ function Resolve-InceptionError {
                 $convertedErrorObject = ($httpErrorObj.FriendlyMessage | ConvertFrom-Json)
                 if (-not [string]::IsNullOrEmpty($convertedErrorObject.languageString)) {
                     $httpErrorObj.FriendlyMessage = $convertedErrorObject.LanguageString
-                } elseif (-not [string]::IsNullOrEmpty($convertedErrorObject.description)) {
+                }
+                elseif (-not [string]::IsNullOrEmpty($convertedErrorObject.description)) {
                     $httpErrorObj.FriendlyMessage = $convertedErrorObject.Description
                 }
-            } catch {
+            }
+            catch {
                 Write-Warning "Unexpected webservice response, Error during Json conversion: $($_.Exception.Message)"
             }
         }
@@ -176,7 +184,8 @@ try {
         }
         $employee = Invoke-RestMethod @splatUserParams -Verbose:$false
         $employeeFound = $true
-    } catch {
+    }
+    catch {
         if ( $_.Exception.message -notmatch '404' ) {
             throw $_
         }
@@ -185,7 +194,8 @@ try {
     if ($employeeFound) {
         $action = 'Found'
         $dryRunMessage = "Delete Inception account for: [$($p.DisplayName)] will be executed during enforcement"
-    } elseif (-not $employeeFound) {
+    }
+    elseif (-not $employeeFound) {
         $action = 'NotFound'
         $dryRunMessage = "Inception account for: [$($p.DisplayName)] not found. Possibly already deleted. Skipping action"
     }
@@ -242,7 +252,8 @@ try {
                             Message = 'Disable Inception Employee and Delete user account was successful'
                             IsError = $false
                         })
-                } else {
+                }
+                else {
                     $auditLogs.Add([PSCustomObject]@{
                             Message = 'Disable Inception Employee and Delete user account already processed'
                             IsError = $false
@@ -262,7 +273,8 @@ try {
 
         $success = $true
     }
-} catch {
+}
+catch {
     $success = $false
     $ex = $PSItem
     if ($($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or
@@ -270,7 +282,8 @@ try {
         $errorObj = Resolve-InceptionError -ErrorObject $ex
         $auditMessage = "Could not delete Inception account. Error: $($errorObj.FriendlyMessage)"
         Write-Verbose "Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
-    } else {
+    }
+    else {
         $auditMessage = "Could not delete Inception account. Error: $($ex.Exception.Message)"
         Write-Verbose "Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)"
     }
@@ -279,7 +292,8 @@ try {
             IsError = $true
         })
     # End
-} finally {
+}
+finally {
     $result = [PSCustomObject]@{
         Success   = $success
         Auditlogs = $auditLogs
