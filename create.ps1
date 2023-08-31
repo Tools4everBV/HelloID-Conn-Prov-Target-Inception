@@ -10,7 +10,6 @@ $success = $false
 $auditLogs = [System.Collections.Generic.List[PSCustomObject]]::new()
 
 # Script Configuration
-#$employeeOverviewId = '0000000' !!NOT USED WITH NEW ENDPOINT USAGE
 $departmentLookupProperty = { $_.Department.ExternalId }
 $titleLookupProperty = { $_.Title.ExternalId }
 
