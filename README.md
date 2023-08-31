@@ -139,7 +139,6 @@ Besides the configuration tab, you can also configure script variables. To decid
 
 ``` Powershell
   # Script Configuration
-  $employeeOverviewId = '1000000'
   $departmentLookupProperty = { $_.Department.ExternalId }
   $titleLookupProperty = { $_.Title.ExternalId }
 ```
