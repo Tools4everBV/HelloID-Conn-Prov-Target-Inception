@@ -1,7 +1,7 @@
 ###########################################
 # HelloID-Conn-Prov-Target-Inception-Create
 #
-# Version: 1.0.1
+# Version: 1.0.2
 ###########################################
 # Initialize default values
 $config = $configuration | ConvertFrom-Json
@@ -403,9 +403,9 @@ try {
     
     # To prevent correlation of multiple accounts the following fix is added. This is becauce the staffnumber is not a unique proeprty in Inception
     # So you could end up with multiple accounts with the same staffnumber which is our correlation property.
-    if ($($resultGetEmployee.total) -gt 1) {
-        $activeEmployeeAccountFound = $resultGetEmployee.items | Where-Object { $_.state -eq '20' }
-        if (($activeEmployeeAccountFound | ConvertTo-Json ).count -gt 1) {
+    if($resultGetEmployee.total -gt 1) {        
+        $activeEmployeeAccountFound = $resultGetEmployee.items | Where-Object { $_.state -eq '20'}        
+        if ($activeEmployeeAccountFound.count -gt 1) {
             throw "More than one active account was found for [$($account.staffnumber)]. Please remove the obsolete account(s) or make sure that the obsolete account(s) are disabled and enable only the correct account."
         }
     }
