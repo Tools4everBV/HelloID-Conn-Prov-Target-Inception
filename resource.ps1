@@ -1,7 +1,7 @@
 #############################################
 # HelloID-Conn-Prov-Target-Inception-Resource
 #
-# Version: 1.0.1
+# Version: 1.0.2
 #############################################
 # Initialize default values
 $config = $configuration | ConvertFrom-Json
@@ -251,7 +251,14 @@ try {
                     $differentOrgUnits = Compare-Object -ReferenceObject @($targetPosition.belongstoorgunits | Select-Object) -DifferenceObject @($departmentIds | Select-Object)
                     if ($differentOrgUnits.InputObject.count -gt 0) {
                         $orgUnitIdsToAdd = $differentOrgUnits | Where-Object -Property SideIndicator -eq '=>'
-                        $allOrgUnitIdsForPosition = ($targetPosition.belongstoorgunits += $orgUnitIdsToAdd.InputObject)
+                        
+                        if($null -ne $orgUnitIdsToAdd.InputObject) {
+                        	$allOrgUnitIdsForPosition = ($targetPosition.belongstoorgunits += $orgUnitIdsToAdd.InputObject)
+                        }
+                        if($null -eq $orgUnitIdsToAdd.InputObject) {
+                        	$allOrgUnitIdsForPosition = $targetPosition.belongstoorgunits
+                        }
+                        
                         $body = @{
                             state             = 20
                             belongstoorgunits = @($allOrgUnitIdsForPosition)
