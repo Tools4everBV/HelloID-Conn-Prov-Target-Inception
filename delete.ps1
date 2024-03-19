@@ -1,23 +1,11 @@
-###########################################
+##################################################
 # HelloID-Conn-Prov-Target-Inception-Delete
-#
-# Version: 1.0.1
-###########################################
-# Initialize default values
-$config = $configuration | ConvertFrom-Json
-$p = $person | ConvertFrom-Json
-$aRef = $AccountReference | ConvertFrom-Json
-$success = $false
-$auditLogs = [System.Collections.Generic.List[PSCustomObject]]::new()
+# PowerShell V2
+# Version: 1.0.0
+##################################################
 
 # Enable TLS1.2
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
-
-# Set debug logging
-switch ($($config.IsDebug)) {
-    $true { $VerbosePreference = 'Continue' }
-    $false { $VerbosePreference = 'SilentlyContinue' }
-}
 
 #region functions
 function Get-InceptionToken {
@@ -25,19 +13,19 @@ function Get-InceptionToken {
     param()
     try {
         $splatTokenParams = @{
-            Uri     = "$($config.BaseUrl)/api/v2/authentication/login"
+            Uri     = "$($actionContext.Configuration.BaseUrl)/api/v2/authentication/login"
             Method  = 'POST'
             Body    = @{
-                username = $config.UserName
-                password = $config.Password
+                username = $actionContext.Configuration.UserName
+                password = $actionContext.Configuration.Password
             } | ConvertTo-Json
             Headers = @{
                 Accept         = 'application/json'
                 'Content-Type' = 'application/json'
             }
         }
+        
         $tokenResponse = Invoke-RestMethod @splatTokenParams -Verbose:$false
-
         Write-Output $tokenResponse.Token
     }
     catch {
@@ -77,7 +65,7 @@ function Update-PositionsPerOrgUnitsList {
                 $itemToAdd = $CurrentPositionsInInception | Where-Object { $_.positionid -eq $compareResultItem.positionid -and $_.orgunitid -eq $compareResultItem.orgunitid }
                 if (-not ($CurrentPositionsInInception.Contains($itemToAdd))) {
                     [array]$CurrentPositionsInInception += ($currentObject)
-                    $auditLogs.Add([PSCustomObject]@{
+                    $outputContext.AuditLogs.Add([PSCustomObject]@{
                             Message = "Added Position [OrgUnit: $($currentObject.OrgunitName) Position: $($currentObject.PositionName)]"
                             IsError = $false
                         })
@@ -98,7 +86,7 @@ function Update-PositionsPerOrgUnitsList {
                 if (-not [string]::IsNullOrEmpty($itemToRemove)) {
                     Write-Verbose "Removing Position [$($itemToRemove)] from Employee"
                     $CurrentPositionsInInception = $CurrentPositionsInInception.Where({ $_ -ne $itemToRemove })
-                    $auditLogs.Add([PSCustomObject]@{
+                    $outputContext.AuditLogs.Add([PSCustomObject]@{
                             Message = "Removed Position [OrgUnit: $($compareResultItem.OrgunitName) Position: $($compareResultItem.PositionName)]"
                             IsError = $false
                         })
@@ -131,59 +119,57 @@ function Resolve-InceptionError {
             ErrorDetails     = $ErrorObject.Exception.Message
             FriendlyMessage  = $ErrorObject.Exception.Message
         }
-        $webresponse = $false
-        if ($ErrorObject.ErrorDetails) {
-            $httpErrorObj.ErrorDetails = $ErrorObject.ErrorDetails
-            $httpErrorObj.FriendlyMessage = $ErrorObject.ErrorDetails
-            $webresponse = $true
+        if (-not [string]::IsNullOrEmpty($ErrorObject.ErrorDetails.Message)) {
+            $httpErrorObj.ErrorDetails = $ErrorObject.ErrorDetails.Message
         }
-        elseif ((-not($null -eq $ErrorObject.Exception.Response) -and $ErrorObject.Exception.GetType().FullName -eq 'System.Net.WebException')) {
-            $streamReaderResponse = [System.IO.StreamReader]::new($ErrorObject.Exception.Response.GetResponseStream()).ReadToEnd()
-            if (-not([string]::IsNullOrWhiteSpace($streamReaderResponse))) {
-                $httpErrorObj.ErrorDetails = $streamReaderResponse
-                $httpErrorObj.FriendlyMessage = $streamReaderResponse
-                $webresponse = $true
-            }
-        }
-        if ($webresponse) {
-            try {
-                $convertedErrorObject = ($httpErrorObj.FriendlyMessage | ConvertFrom-Json)
-                if (-not [string]::IsNullOrEmpty($convertedErrorObject.languageString)) {
-                    $httpErrorObj.FriendlyMessage = $convertedErrorObject.LanguageString
-                }
-                elseif (-not [string]::IsNullOrEmpty($convertedErrorObject.description)) {
-                    $httpErrorObj.FriendlyMessage = $convertedErrorObject.Description
+        elseif ($ErrorObject.Exception.GetType().FullName -eq 'System.Net.WebException') {
+            if ($null -ne $ErrorObject.Exception.Response) {
+                $streamReaderResponse = [System.IO.StreamReader]::new($ErrorObject.Exception.Response.GetResponseStream()).ReadToEnd()
+                if (-not [string]::IsNullOrEmpty($streamReaderResponse)) {
+                    $httpErrorObj.ErrorDetails = $streamReaderResponse
                 }
             }
-            catch {
-                Write-Warning "Unexpected webservice response, Error during Json conversion: $($_.Exception.Message)"
+        }
+        try {
+            $errorDetailsObject = ($httpErrorObj.ErrorDetails | ConvertFrom-Json)
+            # Make sure to inspect the error result object and add only the error message as a FriendlyMessage.
+            if (-not [string]::IsNullOrEmpty($errorDetailsObject.languageString)) {
+                $httpErrorObj.FriendlyMessage = $errorDetailsObject.LanguageString
             }
+            elseif (-not [string]::IsNullOrEmpty($errorDetailsObject.description)) {
+                $httpErrorObj.FriendlyMessage = $errorDetailsObject.Description
+            }            
+            $httpErrorObj.FriendlyMessage = $httpErrorObj.ErrorDetails # Temporarily assignment
+        }
+        catch {
+            $httpErrorObj.FriendlyMessage = $httpErrorObj.ErrorDetails
         }
         Write-Output $httpErrorObj
     }
 }
 #endregion
 
-# Begin
 try {
-    Write-Verbose "Verifying if an Inception account for [$($p.DisplayName)] exists"
+    # Verify if [aRef] has a value
+    if ([string]::IsNullOrEmpty($($actionContext.References.Account))) {
+        throw 'The account reference could not be found'
+    }
+
+    Write-Verbose "Verifying if a Inception account for [$($personContext.Person.DisplayName)] exists"
+    #$correlatedAccount = 'userInfo'
     $headers = [System.Collections.Generic.Dictionary[string, string]]::new()
     $headers.Add('Authorization', "Bearer $(Get-InceptionToken)")
     $headers.Add('Accept', 'application/json')
     $headers.Add('Content-Type', 'application/json')
 
-    $employeeFound = $false
-    if ([string]::IsNullOrEmpty($($aRef.AccountReference))) {
-        throw 'No Account Reference found'
-    }
     try {
         $splatUserParams = @{
-            Uri     = "$($config.BaseUrl)/api/v2/hrm/employees/$($aRef.AccountReference)"
+            Uri     = "$($actionContext.Configuration.BaseUrl)/api/v2/hrm/employees/$($actionContext.References.Account.AccountReference)"
             Method  = 'GET'
             Headers = $Headers
         }
-        $employee = Invoke-RestMethod @splatUserParams -Verbose:$false
-        $employeeFound = $true
+        $correlatedAccount = Invoke-RestMethod @splatUserParams -Verbose:$false
+        
     }
     catch {
         if ( $_.Exception.message -notmatch '404' ) {
@@ -191,38 +177,37 @@ try {
         }
     }
 
-    if ($employeeFound) {
-        $action = 'Found'
-        $dryRunMessage = "Delete Inception account for: [$($p.DisplayName)] will be executed during enforcement"
+    if ($null -ne $correlatedAccount) {
+        $action = 'DeleteAccount'
+        $dryRunMessage = "Delete Inception account: [$($actionContext.References.Account.AccountReference)] for person: [$($personContext.Person.DisplayName)] will be executed during enforcement"
     }
-    elseif (-not $employeeFound) {
+    else {
         $action = 'NotFound'
-        $dryRunMessage = "Inception account for: [$($p.DisplayName)] not found. Possibly already deleted. Skipping action"
+        $dryRunMessage = "Inception account: [$($actionContext.References.Account.AccountReference)] for person: [$($personContext.Person.DisplayName)] could not be found, possibly indicating that it could be deleted, or the account is not correlated"
     }
-    Write-Verbose $dryRunMessage
 
-    # Add an auditMessage showing what will happen during enforcement
-    if ($dryRun -eq $true) {
-        Write-Warning "[DryRun] $dryRunMessage"
+    # Add a message and the result of each of the validations showing what will happen during enforcement
+    if ($actionContext.DryRun -eq $true) {
+        Write-Verbose "[DryRun] $dryRunMessage" -Verbose
     }
 
     # Process
-    if (-not($dryRun -eq $true)) {
-        Write-Verbose "Deleting Inception account with accountReference: [$($aRef.AccountReference)]"
+    if (-not($actionContext.DryRun -eq $true)) {
         switch ($action) {
-            'Found' {
-                if ($null -ne $aRef.Positions) {
+            'DeleteAccount' {
+                Write-Verbose "Deleting Inception account with accountReference: [$($actionContext.References.Account.AccountReference)]"
+                if ($null -ne $($actionContext.References.Account.Positions)) {
                     $splatPositionsPerOrgUnitsList = @{
-                        AccountReference            = $aRef.Positions
+                        AccountReference            = $($actionContext.References.Account.Positions)
                         DesiredPositions            = $null
-                        CurrentPositionsInInception = $employee.positionsPerOrgUnits
+                        CurrentPositionsInInception = $correlatedAccount.positionsPerOrgUnits
                     }
-                    $positionsPerOrgUnits = ([array](Update-PositionsPerOrgUnitsList @splatPositionsPerOrgUnitsList -DryRunFlag:$dryRun))
+                    $positionsPerOrgUnits = ([array](Update-PositionsPerOrgUnitsList @splatPositionsPerOrgUnitsList -DryRunFlag:$($actionContext.DryRun)))
 
                     if ( $null -eq $positionsPerOrgUnits) {
                         $positionsPerOrgUnits = @(  @{
-                                positionid = $config.positionId
-                                orgunitid  = $config.orgunitId
+                                positionid = $actionContext.Configuration.positionId
+                                orgunitid  = $actionContext.Configuration.orgunitId
                             })
                     }
 
@@ -230,7 +215,7 @@ try {
                         positionsPerOrgUnits = $positionsPerOrgUnits
                     }
                     $splatEmployeeUpdateParams = @{
-                        Uri         = "$($config.BaseUrl)/api/v2/hrm/employees/$($aRef.AccountReference)"
+                        Uri         = "$($actionContext.Configuration.BaseUrl)/api/v2/hrm/employees/$($actionContext.References.Account.AccountReference)"
                         Method      = 'PUT'
                         Headers     = $headers
                         Body        = ($body | ConvertTo-Json)
@@ -239,64 +224,52 @@ try {
                     $null = Invoke-RestMethod @splatEmployeeUpdateParams -Verbose:$false
                 }
 
-                if ($employee.state -eq 20) {
-                    Write-Verbose "Disable Inception Employee account with accountReference: [$($aRef.AccountReference)]"
+                #Retrieve employee object to check state; Inception sets state when performing a PUT
+                $employee = Invoke-RestMethod @splatUserParams -Verbose:$false
+
+                if ($employee.state -eq 20) {                    
                     $splatEmployeeDisableParams = @{
-                        Uri     = "$($config.BaseUrl)/api/v2/hrm/employees/$($aRef.AccountReference)"
+                        Uri     = "$($actionContext.Configuration.BaseUrl)/api/v2/hrm/employees/$($actionContext.References.Account.AccountReference)"
                         Method  = 'DELETE'
                         Headers = $headers
                     }
                     $null = Invoke-RestMethod @splatEmployeeDisableParams -Verbose:$false
+                }
 
-                    $auditLogs.Add([PSCustomObject]@{
-                            Message = 'Disable Inception Employee and Delete user account was successful'
-                            IsError = $false
-                        })
-                }
-                else {
-                    $auditLogs.Add([PSCustomObject]@{
-                            Message = 'Disable Inception Employee and Delete user account already processed'
-                            IsError = $false
-                        })
-                }
+                $outputContext.Success = $true
+                $outputContext.AuditLogs.Add([PSCustomObject]@{
+                        Message = 'Disable Inception Employee and Delete user account was successful'
+                        IsError = $false
+                    })
                 break
             }
 
             'NotFound' {
-                $auditLogs.Add([PSCustomObject]@{
-                        Message = "Inception account for: [$($p.DisplayName)] not found. Possibly already deleted. Skipping action"
+                $outputContext.Success = $true
+                $outputContext.AuditLogs.Add([PSCustomObject]@{
+                        Message = "Inception account: [$($actionContext.References.Account.AccountReference)] for person: [$($personContext.Person.DisplayName)] could not be found, possibly indicating that it could be deleted, or the account is not correlated"
                         IsError = $false
                     })
                 break
             }
         }
-
-        $success = $true
     }
 }
 catch {
-    $success = $false
+    $outputContext.success = $false
     $ex = $PSItem
     if ($($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or
         $($ex.Exception.GetType().FullName -eq 'System.Net.WebException')) {
         $errorObj = Resolve-InceptionError -ErrorObject $ex
         $auditMessage = "Could not delete Inception account. Error: $($errorObj.FriendlyMessage)"
-        Write-Verbose "Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
+        Write-Warning "Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
     }
     else {
-        $auditMessage = "Could not delete Inception account. Error: $($ex.Exception.Message)"
-        Write-Verbose "Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)"
+        $auditMessage = "Could not delete Inception account. Error: $($_.Exception.Message)"
+        Write-Warning "Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)"
     }
-    $auditLogs.Add([PSCustomObject]@{
+    $outputContext.AuditLogs.Add([PSCustomObject]@{
             Message = $auditMessage
             IsError = $true
         })
-    # End
-}
-finally {
-    $result = [PSCustomObject]@{
-        Success   = $success
-        Auditlogs = $auditLogs
-    }
-    Write-Output $result | ConvertTo-Json -Depth 10
 }

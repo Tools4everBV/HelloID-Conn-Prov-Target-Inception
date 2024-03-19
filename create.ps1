@@ -1,189 +1,22 @@
-###########################################
+#################################################
 # HelloID-Conn-Prov-Target-Inception-Create
-#
-# Version: 1.0.2
-###########################################
-# Initialize default values
-$config = $configuration | ConvertFrom-Json
-$p = $person | ConvertFrom-Json
-$success = $false
-$auditLogs = [System.Collections.Generic.List[PSCustomObject]]::new()
+# PowerShell V2
+# Version: 1.0.0
+#################################################
+# Enable TLS1.2
+[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
+
+# Set debug logging
+switch ($($actionContext.Configuration.isDebug)) {
+    $true { $VerbosePreference = 'Continue' }
+    $false { $VerbosePreference = 'SilentlyContinue' }
+}
 
 # Script Configuration
 $departmentLookupProperty = { $_.Department.ExternalId }
 $titleLookupProperty = { $_.Title.ExternalId }
 
-#Generate surname conform nameconvention
-function Get-LastName {
-    [CmdletBinding()]
-    param (
-        [Parameter(Mandatory)]
-        [ValidateNotNullOrEmpty()]
-        [object]
-        $person
-    )
-
-    if ([string]::IsNullOrEmpty($person.Name.FamilyNamePrefix)) {
-        $prefix = ""
-    }
-    else {
-        $prefix = $person.Name.FamilyNamePrefix + " "
-    }
-
-    if ([string]::IsNullOrEmpty($person.Name.FamilyNamePartnerPrefix)) {
-        $partnerPrefix = ""
-    }
-    else {
-        $partnerPrefix = $person.Name.FamilyNamePartnerPrefix + " "
-    }
-
-    $Surname = switch ($person.Name.Convention) {
-        "B" { $person.Name.FamilyName }
-        "BP" { $person.Name.FamilyName + " - " + $partnerprefix + $person.Name.FamilyNamePartner }
-        "P" { $person.Name.FamilyNamePartner }
-        "PB" { $person.Name.FamilyNamePartner + " - " + $prefix + $person.Name.FamilyName }
-        default { $prefix + $person.Name.FamilyName }
-    }
-
-    $Prefix = switch ($p.Name.Convention) {
-        "B" { $prefix }
-        "BP" { $prefix }
-        "P" { $partnerPrefix }
-        "PB" { $partnerPrefix }
-        default { $prefix }
-    }
-    $output = [PSCustomObject]@{
-        surname  = $Surname
-        prefixes = $Prefix.Trim()
-    }
-    Write-Output $output
-}
-
-# Employee Account mapping
-$account = [PSCustomObject]@{
-    staffnumber          = $p.ExternalId
-    firstname            = $p.Name.NickName
-    lastname             = (Get-LastName -Person $p).surname
-    middlename           = (Get-LastName -Person $p).prefixes
-    initials             = $p.Name.Initials
-    email                = $p.Contact.Business.Email
-    phone                = $p.Contact.Business.Phone.Fixed
-    dateofbirth          = if ($null -ne $p.Details.BirthDate ) { '{0:yyyy-MM-dd}' -f ([datetime]$p.Details.BirthDate) };
-    startdate            = if ($null -ne $p.PrimaryContract.StartDate ) { '{0:yyyy-MM-dd}' -f ([datetime]$p.PrimaryContract.StartDate) };
-    enddate              = $null # ((Get-Date).AddDays(-1))
-    positionsPerOrgUnits = @()
-}
-
-# Enable TLS1.2
-[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
-
-# Set debug logging
-switch ($($config.IsDebug)) {
-    $true { $VerbosePreference = 'Continue' }
-    $false { $VerbosePreference = 'SilentlyContinue' }
-}
-
-# Set to true if accounts in the target system must be updated
-$updatePerson = $false
-
 #region functions
-function Get-InceptionToken {
-    [CmdletBinding()]
-    param()
-    try {
-        $splatTokenParams = @{
-            Uri     = "$($config.BaseUrl)/api/v2/authentication/login"
-            Method  = 'POST'
-            Body    = @{
-                username = $config.UserName
-                password = $config.Password
-            } | ConvertTo-Json
-            Headers = @{
-                Accept         = 'application/json'
-                'Content-Type' = 'application/json'
-            }
-        }
-        $tokenResponse = Invoke-RestMethod @splatTokenParams -Verbose:$false
-
-        Write-Output $tokenResponse.Token
-    }
-    catch {
-        $PSCmdlet.ThrowTerminatingError($_)
-    }
-}
-
-function Update-PositionsPerOrgUnitsList {
-    [CmdletBinding()]
-    param(
-        [System.Array]
-        [AllowNull()]
-        $AccountReference,
-
-        [System.Array]
-        [AllowNull()]
-        $DesiredPositions,
-
-        [System.Array]
-        $CurrentPositionsInInception,
-
-        $DryRunFlag
-    )
-    try {
-        if ($null -eq $AccountReference) {
-            $accountReference = [System.Collections.Generic.List[object]]::new()
-        }
-        if ($null -eq $DesiredPositions) {
-            $DesiredPositions = [System.Collections.Generic.List[object]]::new()
-        }
-        $compareResults = Compare-Object $AccountReference $DesiredPositions -Property positionid, orgunitid -PassThru
-        foreach ($compareResultItem in $compareResults) {
-            if ($compareResultItem.SideIndicator -eq '=>' ) {
-                $currentObject = ($compareResultItem | Select-Object * -ExcludeProperty SideIndicator)
-                Write-Verbose "Process Position [$($currentObject)] of Employee"
-
-                $itemToAdd = $CurrentPositionsInInception | Where-Object { $_.positionid -eq $compareResultItem.positionid -and $_.orgunitid -eq $compareResultItem.orgunitid }
-                if (-not ($CurrentPositionsInInception.Contains($itemToAdd))) {
-                    [array]$CurrentPositionsInInception += ($currentObject)
-                    $auditLogs.Add([PSCustomObject]@{
-                            Message = "Added Position [OrgUnit: $($currentObject.OrgunitName) Position: $($currentObject.PositionName)]"
-                            IsError = $false
-                        })
-                    if ($DryRunFlag -eq $true) {
-                        Write-Warning "[DryRun] Added Position [OrgUnit: $($currentObject.orgunitid) Position: $($currentObject.positionid)]"
-                    }
-                }
-                else {
-                    if ($DryRunFlag -eq $true) {
-                        Write-Warning "[DryRun] Calculated Position already exists [OrgUnit: $($currentObject.orgunitid) Position: $($currentObject.positionid)]"
-                    }
-
-                }
-
-            }
-            elseif ($compareResultItem.SideIndicator -eq '<=' ) {
-                $itemToRemove = $CurrentPositionsInInception | Where-Object { $_.positionid -eq $compareResultItem.positionid -and $_.orgunitid -eq $compareResultItem.orgunitid }
-                if (-not [string]::IsNullOrEmpty($itemToRemove)) {
-                    Write-Verbose "Removing Position [$($itemToRemove)] from Employee"
-                    $CurrentPositionsInInception = $CurrentPositionsInInception.Where({ $_ -ne $itemToRemove })
-                    $auditLogs.Add([PSCustomObject]@{
-                            Message = "Removed Position [OrgUnit: $($compareResultItem.OrgunitName) Position: $($compareResultItem.PositionName)]"
-                            IsError = $false
-                        })
-                }
-                else {
-                    if ($DryRunFlag -eq $true) {
-                        Write-Warning "[DryRun] Previously assigned Position [$($compareResultItem | Select-Object * -ExcludeProperty SideIndicator)] is already removed from Employee"
-                    }
-                }
-            }
-        }
-        Write-Output $CurrentPositionsInInception | Select-Object positionid, orgunitid
-    }
-    catch {
-        $PSCmdlet.ThrowTerminatingError($_)
-    }
-}
-
 function Resolve-InceptionError {
     [CmdletBinding()]
     param (
@@ -230,6 +63,31 @@ function Resolve-InceptionError {
     }
 }
 
+function Get-InceptionToken {
+    [CmdletBinding()]
+    param()
+    try {
+        $splatTokenParams = @{
+            Uri     = "$($actionContext.Configuration.BaseUrl)/api/v2/authentication/login"
+            Method  = 'POST'
+            Body    = @{
+                username = $actionContext.Configuration.UserName
+                password = $actionContext.Configuration.Password
+            } | ConvertTo-Json
+            Headers = @{
+                Accept         = 'application/json'
+                'Content-Type' = 'application/json'
+            }
+        }
+        
+        $tokenResponse = Invoke-RestMethod @splatTokenParams -Verbose:$false
+        Write-Output $tokenResponse.Token
+    }
+    catch {
+        $PSCmdlet.ThrowTerminatingError($_)
+    }
+}
+
 function Get-InceptionPosition {
     [CmdletBinding()]
     Param(
@@ -242,7 +100,7 @@ function Get-InceptionPosition {
         $positions = [System.Collections.Generic.list[object]]::new()
         do {
             $splatUserParams = @{
-                Uri     = "$($config.BaseUrl)/api/v2/hrm/positions?pagesize=$pageSize&page=$pageNumber"
+                Uri     = "$($actionContext.Configuration.BaseUrl)/api/v2/hrm/positions?pagesize=$pageSize&page=$pageNumber"
                 Method  = 'GET'
                 Headers = $headers
             }
@@ -267,7 +125,6 @@ function Get-InceptionOrgunit {
     [CmdletBinding()]
     Param(
         $pageSize = 200,
-
         $headers
     )
     try {
@@ -275,7 +132,7 @@ function Get-InceptionOrgunit {
         $orgunits = [System.Collections.Generic.list[object]]::new()
         do {
             $splatUserParams = @{
-                Uri     = "$($config.BaseUrl)/api/v2/hrm/orgunits?pagesize=$pageSize&page=$pageNumber"
+                Uri     = "$($actionContext.Configuration.BaseUrl)/api/v2/hrm/orgunits?pagesize=$pageSize&page=$pageNumber"
                 Method  = 'GET'
                 Headers = $headers
             }
@@ -296,7 +153,7 @@ function Get-InceptionOrgunit {
     }
 }
 
-function Get-InceptionIdsFromHelloIdContact {
+function Get-InceptionIdsFromHelloIdContract {
     [CmdletBinding()]
     param(
         [System.Object[]]
@@ -378,60 +235,154 @@ function Get-InceptionIdsFromHelloIdContact {
         $PSCmdlet.ThrowTerminatingError($_)
     }
 }
+
+function Update-PositionsPerOrgUnitsList {
+    [CmdletBinding()]
+    param(
+        [System.Array]
+        [AllowNull()]
+        $DesiredPositions,
+
+        [System.Array]
+        $CurrentPositionsInInception,
+
+        $DryRunFlag
+    )
+    try {
+        if ($null -eq $AccountReference) {
+            $accountReference = [System.Collections.Generic.List[object]]::new()
+        }
+        if ($null -eq $DesiredPositions) {
+            $DesiredPositions = [System.Collections.Generic.List[object]]::new()
+        }
+        $compareResults = Compare-Object $AccountReference $DesiredPositions -Property positionid, orgunitid -PassThru
+        foreach ($compareResultItem in $compareResults) {
+            if ($compareResultItem.SideIndicator -eq '=>' ) {
+                $currentObject = ($compareResultItem | Select-Object * -ExcludeProperty SideIndicator)
+                Write-Verbose "Process Position [$($currentObject)] of Employee"
+
+                $itemToAdd = $CurrentPositionsInInception | Where-Object { $_.positionid -eq $compareResultItem.positionid -and $_.orgunitid -eq $compareResultItem.orgunitid }
+                
+                if (-not ($CurrentPositionsInInception.Contains($itemToAdd))) {                    
+                    [array]$CurrentPositionsInInception += ($currentObject)
+                    $outputContext.AuditLogs.Add([PSCustomObject]@{
+                            Message = "Added Position [OrgUnit: $($currentObject.OrgunitName) Position: $($currentObject.PositionName)]"
+                            IsError = $false
+                        })
+                    if ($DryRunFlag -eq $true) {
+                        Write-Warning "[DryRun] Added Position [OrgUnit: $($currentObject.orgunitid) Position: $($currentObject.positionid)]"
+                    }
+                }
+                else {
+                    if ($DryRunFlag -eq $true) {
+                        Write-Warning "[DryRun] Calculated Position already exists [OrgUnit: $($currentObject.orgunitid) Position: $($currentObject.positionid)]"
+                    }
+
+                }
+
+            }
+            elseif ($compareResultItem.SideIndicator -eq '<=' ) {
+                $itemToRemove = $CurrentPositionsInInception | Where-Object { $_.positionid -eq $compareResultItem.positionid -and $_.orgunitid -eq $compareResultItem.orgunitid }
+                if (-not [string]::IsNullOrEmpty($itemToRemove)) {
+                    Write-Verbose "Removing Position [$($itemToRemove)] from Employee"
+                    $CurrentPositionsInInception = $CurrentPositionsInInception.Where({ $_ -ne $itemToRemove })
+                    $outputContext.AuditLogs.Add([PSCustomObject]@{
+                            Message = "Removed Position [OrgUnit: $($compareResultItem.OrgunitName) Position: $($compareResultItem.PositionName)]"
+                            IsError = $false
+                        })
+                }
+                else {
+                    if ($DryRunFlag -eq $true) {
+                        Write-Warning "[DryRun] Previously assigned Position [$($compareResultItem | Select-Object * -ExcludeProperty SideIndicator)] is already removed from Employee"
+                    }
+                }
+            }
+        }        
+        Write-Output $CurrentPositionsInInception | Select-Object positionid, orgunitid
+    }
+    catch {
+        $PSCmdlet.ThrowTerminatingError($_)
+    }
+}
 #endregion
 
-# Begin
 try {
-    # Verify if a user must be either [created and correlated], [updated and correlated] or just [correlated]
-    $headers = @{
-        Accept        = 'application/json'
-        Authorization = "Bearer $(Get-InceptionToken)"
+    # AccountReference must have a value
+    $outputContext.AccountReference = 'Currently not available'
+
+    # Remove ID field because only used for export data
+    if ($outputContext.Data.PSObject.Properties.Name -Contains 'id') {
+        $outputContext.Data.PSObject.Properties.Remove('id')
     }
 
-    if ([string]::IsNullOrEmpty($($account.staffnumber))) {
-        throw 'No staffnumber provided'
-    }
+    # Properties Excluded from response
+    $excludedProperties = "dateofbirth,phone,mobile,residence,state,supervisorid,rolesPerOrgUnits,positionsPerOrgGroup,rolesPerOrgGroup"
+    $excludedPropertiesArray = $excludedProperties -split ","
 
-    Write-Verbose  'Determine if account already exists'
-    $splatUserParams = @{
-        Uri     = "$($config.BaseUrl)/api/v2/hrm/employees/staffnumber/$($account.staffnumber)"
-        Method  = 'GET'
-        Headers = $headers
-    }
-    
-    $resultGetEmployee = Invoke-RestMethod @splatUserParams -Verbose:$false
-    
-    # To prevent correlation of multiple accounts the following fix is added. This is becauce the staffnumber is not a unique proeprty in Inception
-    # So you could end up with multiple accounts with the same staffnumber which is our correlation property.
-    if($resultGetEmployee.total -gt 1) {        
-        $activeEmployeeAccountFound = $resultGetEmployee.items | Where-Object { $_.state -eq '20'}        
-        if ($activeEmployeeAccountFound.count -gt 1) {
-            throw "More than one active account was found for [$($account.staffnumber)]. Please remove the obsolete account(s) or make sure that the obsolete account(s) are disabled and enable only the correct account."
+    # Validate correlation configuration
+    if ($actionContext.CorrelationConfiguration.Enabled) {
+        $correlationField = $actionContext.CorrelationConfiguration.accountField
+        $correlationValue = $actionContext.CorrelationConfiguration.accountFieldValue
+
+        if ([string]::IsNullOrEmpty($($correlationField))) {
+            throw 'Correlation is enabled but not configured correctly'
         }
-    }
+        if ([string]::IsNullOrEmpty($($correlationValue))) {
+            throw 'Correlation is enabled but [accountFieldValue] is empty. Please make sure it is correctly mapped'
+        }
 
-    $aRef = ($resultGetEmployee.items | Select-Object -First 1).id
+        # Verify if a user must be either [created ] or just [correlated]
+        $headers = @{
+            Accept        = 'application/json'
+            Authorization = "Bearer $(Get-InceptionToken)"
+        }
 
-    if (-not [string]::IsNullOrEmpty($aRef)) {
-        try {
-            $splatUserParams = @{
-                Uri     = "$($config.BaseUrl)/api/v2/hrm/employees/$aRef"
-                Method  = 'GET'
-                Headers = $headers
+        Write-Verbose  'Determine if account already exists'
+        $splatUserParams = @{
+            Uri     = "$($actionContext.Configuration.BaseUrl)/api/v2/hrm/employees/staffnumber/$($actionContext.Data.staffnumber)"
+            Method  = 'GET'
+            Headers = $headers
+        }        
+        $resultGetEmployee = Invoke-RestMethod @splatUserParams -Verbose:$false
+
+        if ($resultGetEmployee.total -gt 1) {        
+            $activeEmployeeAccountFound = $resultGetEmployee.items | Where-Object { $_.state -eq 20 }
+            if ($activeEmployeeAccountFound.count -gt 1) {
+                throw "More than one active account was found for person with staffnumber [$($actionContext.Data.staffnumber)]. Please remove the obsolete account(s) or make sure that the obsolete account(s) are disabled and enable only the correct account."
             }
-            $employee = Invoke-RestMethod @splatUserParams -Verbose:$false # Exception if not found
         }
-        catch {
-            if ( $_.Exception.message -notmatch '404' ) {
-                throw $_
-            }
-        }
+    }
+
+    $correlatedAccount = $resultGetEmployee.items | Select-Object -First 1
+
+    if ($null -eq $correlatedAccount) {
+        $action = 'CreateAccount'
+    }
+    else {
+        $action = 'CorrelateAccount'
+        $outputContext.AccountReference = $correlatedAccount.id
+    }
+
+    # Add a message and the result of each of the validations showing what will happen during enforcement
+    if ($actionContext.DryRun -eq $true) {
+        Write-Verbose "[DryRun] Inception $action for: [$($personContext.Person.DisplayName)], will be executed during enforcement" -Verbose
     }
 
     # Retrieve Metadata
-    [array]$desiredContracts = $p.contracts | Where-Object { $_.Context.InConditions -eq $true }
-    if ($dryRun -eq $true) {
-        [array]$desiredContracts = $p.contracts
+    [array]$desiredContracts = $personContext.Person.Contracts | Where-Object { $_.Context.InConditions -eq $true }
+    
+    if ($actionContext.DryRun -eq $true) {
+        [array]$desiredContracts = $personContext.Person.Contracts
+    }
+
+    # Remove supervisorid field because only used for export data
+    if ($actionContext.Data.PSObject.Properties.Name -Contains 'supervisorid') {
+        if ($null -ne $actionContext.References.ManagerAccount) {
+            $actionContext.Data.supervisorid = $actionContext.References.ManagerAccount.AccountReference
+        }
+        else {
+            $actionContext.Data.PSObject.Properties.Remove('supervisorid')
+        }
     }
 
     Write-Verbose 'Gathering Inception Positions and organization Units to map the against the HelloId person'
@@ -445,149 +396,111 @@ try {
         MappingPositions      = ($positions | Group-Object Code -AsHashTable -AsString)
         MappingOrgUnits       = ($orgUnits | Group-Object Code -AsHashTable -AsString)
     }
-    $desiredPositionList = Get-InceptionIdsFromHelloIdContact @splatGetInceptionIds
+    
+    $desiredPositionList = Get-InceptionIdsFromHelloIdContract @splatGetInceptionIds
 
+    $splatPositionsPerOrgUnitsList = @{
+        DesiredPositions            = $desiredPositionList
+        CurrentPositionsInInception = $actionContext.Data.positionsPerOrgUnits
+    }
 
-    if ($null -eq $employee) {
-        $action = 'Create-Correlate'
-        $splatPositionsPerOrgUnitsList = @{
-            AccountReference            = ([System.Collections.Generic.list[object]]::new())
-            DesiredPositions            = $desiredPositionList
-            CurrentPositionsInInception = $account.positionsPerOrgUnits
-        }
-    }
-    elseif ($updatePerson -eq $true) {
-        $action = 'Update-Correlate'
-        $splatPositionsPerOrgUnitsList = @{
-            AccountReference            = ([System.Collections.Generic.list[object]]::new())
-            DesiredPositions            = $desiredPositionList
-            CurrentPositionsInInception = $employee.positionsPerOrgUnits
-        }
-    }
-    else {
-        $splatPositionsPerOrgUnitsList = @{
-            AccountReference            = ([System.Collections.Generic.list[object]]::new())
-            DesiredPositions            = $desiredPositionList
-            CurrentPositionsInInception = $employee.positionsPerOrgUnits
-        }
-        $action = 'Correlate'
-    }
     # Update function also writes auditlogs and dryrun logging
-    $account.positionsPerOrgUnits = ([array](Update-PositionsPerOrgUnitsList @splatPositionsPerOrgUnitsList -DryRunFlag:$dryRun))
-
-    # Add a warning message showing what will happen during enforcement
-    if ($dryRun -eq $true) {
-        Write-Warning "[DryRun] $action Inception Employee account for: [$($p.DisplayName)], will be executed during enforcement"
-    }
-
+    $actionContext.Data.positionsPerOrgUnits = ([array](Update-PositionsPerOrgUnitsList @splatPositionsPerOrgUnitsList -DryRunFlag:$($actionContext.DryRun)))
+    
     # Process
-    if (-not($dryRun -eq $true)) {
+    if (-not($actionContext.DryRun -eq $true)) {
         switch ($action) {
-            'Create-Correlate' {
-                Write-Verbose 'Creating and correlating Inception Employee account'
+            'CreateAccount' {                
+                Write-Verbose 'Gathering Inception Positions and organization Units to map the against the HelloId person'
+                $positions = Get-InceptionPosition -Headers $headers -pageSize 1000
+                $orgUnits = Get-InceptionOrgunit -Headers $headers -pageSize 1000
+
+                $splatGetInceptionIds = @{
+                    DesiredContracts      = $desiredContracts
+                    LookupFieldPositionId = $titleLookupProperty
+                    LookupFieldOrgunitId  = $departmentLookupProperty
+                    MappingPositions      = ($positions | Group-Object Code -AsHashTable -AsString)
+                    MappingOrgUnits       = ($orgUnits | Group-Object Code -AsHashTable -AsString)
+                }
+                $desiredPositionList = Get-InceptionIdsFromHelloIdContact @splatGetInceptionIds
+
+                $splatPositionsPerOrgUnitsList = @{
+                    DesiredPositions            = $desiredPositionList
+                    CurrentPositionsInInception = $actionContext.Data.positionsPerOrgUnits
+                }
+
+                # Update function also writes auditlogs and dryrun logging
+                $actionContext.Data.positionsPerOrgUnits = ([array](Update-PositionsPerOrgUnitsList @splatPositionsPerOrgUnitsList -DryRunFlag:$actionContext.DryRun))
+                
+                # Set supervisorid to Inception
+                Write-Verbose 'Creating and correlating Inception employee account'
                 $splatEmployeeCreateParams = @{
-                    Uri         = "$($config.BaseUrl)/api/v2/hrm/employees"
+                    Uri         = "$($actionContext.Configuration.BaseUrl)/api/v2/hrm/employees"
                     Method      = 'POST'
                     Headers     = $headers
-                    Body        = ($account | ConvertTo-Json)
+                    Body        = ($actionContext.Data | ConvertTo-Json)
                     ContentType = 'application/json; charset=utf-8'
                 }
-                $responseEmployee = Invoke-RestMethod @splatEmployeeCreateParams -Verbose:$false
-                $aRef = $responseEmployee.id
-
+                #Write-Verbose ($splatEmployeeCreateParams | ConvertTo-Json)
+                $createdAccount = Invoke-RestMethod @splatEmployeeCreateParams -Verbose:$false
+                $createdAccount = $createdAccount | Select-Object -Property * -ExcludeProperty $excludedPropertiesArray
+                
                 # Disable just created Employee. Position and properties are maintained
                 $splatEmployeeDisableParams = @{
-                    Uri     = "$($config.BaseUrl)/api/v2/hrm/employees/$aRef"
+                    Uri     = "$($actionContext.Configuration.BaseUrl)/api/v2/hrm/employees/$($createdAccount.id)"
                     Method  = 'DELETE'
                     Headers = $headers
                 }
                 $null = Invoke-RestMethod @splatEmployeeDisableParams -Verbose:$false #204
+
+                # Only required when you do need values from the target system, for example Account Reference.
+                # Otherwise $outputContext.Data is automatically filled the with account Data
+                $outputContext.Data = $createdAccount
+                $accountReferenceId = $createdAccount.id
+                $auditLogMessage = "Create account was successful. AccountReference is: [$($outputContext.AccountReference)"
                 break
             }
 
-            'Update-Correlate' {
-                Write-Verbose 'Updating and correlating Inception Employee account'
-                if ($null -eq (Compare-Object $account.positionsPerOrgUnits   $employee.positionsPerOrgUnits)) {
-                    Write-Verbose 'No position update required'
-                }
-                $account = $account | Select-Object * -ExcludeProperty state, enddate
-                $splatEmployeeUpdateParams = @{
-                    Uri         = "$($config.BaseUrl)/api/v2/hrm/employees/$($aRef)"
-                    Method      = 'PUT'
-                    Headers     = $headers
-                    Body        = ($account | ConvertTo-Json)
-                    ContentType = 'application/json; charset=utf-8'
-                }
-                $null = Invoke-RestMethod @splatEmployeeUpdateParams -Verbose:$false
-                break
-            }
-
-            'Correlate' {
-                if ($null -eq (Compare-Object $account.positionsPerOrgUnits   $employee.positionsPerOrgUnits)) {
-                    Write-Verbose 'Correlating Inception Employee account'
-                    Write-Verbose  'No position update required'
-                }
-                else {
-                    Write-Verbose 'Updating Position and correlating Inception Employee account'
-                    $splatEmployeeUpdateParams = @{
-                        Uri         = "$($config.BaseUrl)/api/v2/hrm/employees/$($aRef)"
-                        Method      = 'PUT'
-                        Headers     = $headers
-                        Body        = (($account | Select-Object positionsPerOrgUnits ) | ConvertTo-Json)
-                        ContentType = 'application/json; charset=utf-8'
-                    }
-                    $null = Invoke-RestMethod @splatEmployeeUpdateParams -Verbose:$false
-                }
+            'CorrelateAccount' {
+                Write-Verbose 'Correlating Inception employee account'
+                $correlatedAccount = $correlatedAccount | Select-Object -Property * -ExcludeProperty $excludedPropertiesArray
+                $outputContext.Data = $correlatedAccount
+                $accountReferenceId = $correlatedAccount.id
+                $outputContext.AccountCorrelated = $true
+                $auditLogMessage = "Correlated account: [$($correlatedAccount.id)] on field: [$($correlationField)] with value: [$($correlationValue)]"
                 break
             }
         }
-    }
-    $success = $true
-    $auditLogs.Add([PSCustomObject]@{
-            Message = "$action Employee account was successful. AccountReference is: [$aRef]"
-            IsError = $false
-        })
 
+        $accountReferenceObject = @{
+            AccountReference = $accountReferenceId
+            Positions        = $desiredPositionList | Select-Object * -ExcludeProperty SideIndicator
+        }
+
+        $outputContext.AccountReference = $accountReferenceObject
+        $outputContext.success = $true
+        $outputContext.AuditLogs.Add([PSCustomObject]@{
+                Action  = $action
+                Message = $auditLogMessage
+                IsError = $false
+            })
+    }
 }
 catch {
-    $success = $false
+    $outputContext.success = $false
     $ex = $PSItem
-    Write-Verbose -Verbose $ex.Exception.Message
     if ($($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or
         $($ex.Exception.GetType().FullName -eq 'System.Net.WebException')) {
         $errorObj = Resolve-InceptionError -ErrorObject $ex
-        $auditMessage = "Could not $action Inception Employee account. Error: $($errorObj.FriendlyMessage)"
-        Write-Verbose "Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
+        $auditMessage = "Could not $action Inception account. Error: $($errorObj.FriendlyMessage)"
+        Write-Warning "Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
     }
     else {
-        $auditMessage = "Could not $action Inception Employee account. Error: $($ex.Exception.Message)"
-        Write-Verbose "Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)"
+        $auditMessage = "Could not $action Inception account. Error: $($ex.Exception.Message)"
+        Write-Warning "Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)"
     }
-    if ($dryRun -eq $true) {
-        Write-Warning $auditMessage
-    }
-    $auditLogs.Add([PSCustomObject]@{
+    $outputContext.AuditLogs.Add([PSCustomObject]@{
             Message = $auditMessage
             IsError = $true
         })
-    # End
-}
-finally {
-    $accountReferenceObject = @{
-        AccountReference = $aRef
-        Positions        = $desiredPositionList | Select-Object * -ExcludeProperty SideIndicator
-    }
-
-    $result = [PSCustomObject]@{
-        Success          = $success
-        AccountReference = $accountReferenceObject
-        Auditlogs        = $auditLogs
-        Account          = $account
-        ExportData       = [PSCustomObject]@{
-            Id          = $aRef
-            staffNumber = $($account.staffnumber)
-        }
-    }
-
-    Write-Output $result | ConvertTo-Json -Depth 10
 }
