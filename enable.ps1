@@ -3,7 +3,10 @@
 # PowerShell V2
 # Version: 1.0.0
 #################################################
-Write-Verbose -Verbose $actionContext.References.Account
+
+# Set to true at start, because only when an error occurs it is set to false
+$outputContext.Success = $true
+
 # Enable TLS1.2
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
 
@@ -12,10 +15,6 @@ switch ($($actionContext.Configuration.isDebug)) {
     $true { $VerbosePreference = 'Continue' }
     $false { $VerbosePreference = 'SilentlyContinue' }
 }
-
-# Script Variables
-#$employeeFound = $false
-#$userFound     = $false
 
 #region functions
 function Get-InceptionToken {
@@ -94,7 +93,6 @@ try {
     }
 
     Write-Verbose "Verifying if an Inception account for [$($personContext.Person.DisplayName)] (still) exists"
-    #$correlatedAccount = 'userInfo'
     $headers = [System.Collections.Generic.Dictionary[string, string]]::new()
     $headers.Add('Authorization', "Bearer $(Get-InceptionToken)")
     $headers.Add('Accept', 'application/json')
@@ -106,8 +104,7 @@ try {
             Method  = 'GET'
             Headers = $Headers
         }
-        $correlatedAccount = Invoke-RestMethod @splatUserParams -Verbose:$false
-        #$employeeFound    = $true
+        $correlatedAccount = Invoke-RestMethod @splatUserParams -Verbose:$false        
     }
     catch {
         if ( $_.Exception.message -notmatch '404' ) {
@@ -121,8 +118,7 @@ try {
             Method  = 'GET'
             Headers = $Headers
         }
-        $correlatedUser = Invoke-RestMethod @splatUserParams -Verbose:$false
-        #$userFound     = $true
+        $correlatedUser = Invoke-RestMethod @splatUserParams -Verbose:$false        
     }
     catch {
         if ( $_.Exception.message -notmatch '404' ) {
@@ -228,4 +224,10 @@ catch {
             Message = $auditMessage
             IsError = $true
         })
+}
+finally {
+    # Check if auditLogs contains errors, if no errors are found, set success to true
+    if (-not($outputContext.AuditLogs.IsError -contains $true)) {
+        $outputContext.Success = $true
+    }
 }

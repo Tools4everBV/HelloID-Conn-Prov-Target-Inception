@@ -4,6 +4,9 @@
 # Version: 1.0.0
 #################################################
 
+# Set to true at start, because only when an error occurs it is set to false
+$outputContext.Success = $true
+
 # Enable TLS1.2
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
 
@@ -306,7 +309,7 @@ function Resolve-InceptionError {
     }
 }
 #endregion
-$actionContext.DryRun = $false
+
 try {
     # Verify if [aRef] has a value
     if ([string]::IsNullOrEmpty($($actionContext.References.Account))) {
@@ -365,8 +368,8 @@ try {
         }
 
         Write-Verbose 'Gathering Inception Positions and organization Units to map the against the HelloId person'
-        $positions = Get-InceptionPosition -Headers $headers -pageSize 1000
-        $orgUnits = Get-InceptionOrgunit -Headers $headers -pageSize 1000
+        $positions = Get-InceptionPosition -Headers $headers
+        $orgUnits = Get-InceptionOrgunit -Headers $headers
 
         $splatGetInceptionIds = @{
             DesiredContracts      = $desiredContracts
@@ -495,4 +498,10 @@ catch {
             Message = $auditMessage
             IsError = $true
         })
+}
+finally {
+    # Check if auditLogs contains errors, if no errors are found, set success to true
+    if (-not($outputContext.AuditLogs.IsError -contains $true)) {
+        $outputContext.Success = $true
+    }
 }

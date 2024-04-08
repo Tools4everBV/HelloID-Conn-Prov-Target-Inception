@@ -2,7 +2,57 @@
   "Version": "v1",
   "MappingFields": [
     {
-      "Name": "enddate",
+      "Name": "middlename",
+      "Description": "",
+      "Type": "Text",
+      "MappingActions": [
+        {
+          "MapForActions": [
+            "Create",
+            "Update"
+          ],
+          "MappingMode": "Complex",
+          "Value": "\"function generateMiddleName() {\\r\\n    let middleName = Person.Name.FamilyNamePrefix;\\r\\n    let middleNamePartner = Person.Name.FamilyNamePartnerPrefix;\\r\\n    \\r\\n    let nameFormatted = \\\"\\\";\\r\\n \\r\\n    switch(Person.Name.Convention) {\\r\\n    case \\\"B\\\":\\r\\n    case \\\"BP\\\":\\r\\n        if (typeof middleName !== 'undefined' && middleName) { nameFormatted = middleName }\\r\\n        break;\\r\\n    case \\\"P\\\":\\r\\n    case \\\"PB\\\":\\r\\n        if (typeof middleNamePartner !== 'undefined' && middleNamePartner) { nameFormatted = middleNamePartner  }\\r\\n        break;    \\r\\n    default:\\r\\n        if (typeof middleName !== 'undefined' && middleName) { nameFormatted = middleName  }\\r\\n        break;\\r\\n    }\\r\\n    middleName = nameFormatted.trim();\\r\\n \\r\\nreturn middleName;\\r\\n}\\r\\ngenerateMiddleName()\"",
+          "UsedInNotifications": false,
+          "StoreInAccountData": false
+        }
+      ]
+    },
+    {
+      "Name": "lastname",
+      "Description": "",
+      "Type": "Text",
+      "MappingActions": [
+        {
+          "MapForActions": [
+            "Create",
+            "Update"
+          ],
+          "MappingMode": "Complex",
+          "Value": "\"function generateLastName() {\\r\\n    let middleName = Person.Name.FamilyNamePrefix;\\r\\n    let lastName = Person.Name.FamilyName;\\r\\n    let middleNamePartner = Person.Name.FamilyNamePartnerPrefix;\\r\\n    let lastNamePartner = Person.Name.FamilyNamePartner;\\r\\n \\r\\n    let nameFormatted = \\\"\\\";\\r\\n \\r\\n    switch(Person.Name.Convention) {\\r\\n    case \\\"B\\\":        \\r\\n        nameFormatted = lastName;\\r\\n        break;\\r\\n    case \\\"P\\\":\\r\\n        nameFormatted = lastNamePartner;\\r\\n        break;\\r\\n    case \\\"BP\\\":        \\r\\n        nameFormatted = lastName + ' - ';\\r\\n        if (typeof middleNamePartner !== 'undefined' && middleNamePartner) { nameFormatted = nameFormatted + middleNamePartner + ' ' }\\r\\n        nameFormatted = nameFormatted + lastNamePartner;\\r\\n        break;\\r\\n    case \\\"PB\\\":        \\r\\n        nameFormatted = lastNamePartner + ' - ';\\r\\n        if (typeof middleName !== 'undefined' && middleName) { nameFormatted = nameFormatted + middleName + ' ' }\\r\\n        nameFormatted = nameFormatted + lastName;\\r\\n        break;\\r\\n    default:        \\r\\n        nameFormatted = lastName;\\r\\n        break;\\r\\n    }\\r\\n    lastName = nameFormatted.trim();\\r\\n \\r\\nreturn lastName;\\r\\n}\\r\\ngenerateLastName()\"",
+          "UsedInNotifications": false,
+          "StoreInAccountData": false
+        }
+      ]
+    },
+    {
+      "Name": "password",
+      "Description": "",
+      "Type": "Text",
+      "MappingActions": [
+        {
+          "MapForActions": [
+            "Enable"
+          ],
+          "MappingMode": "Complex",
+          "Value": "\"function generatePassword(){\\r\\n     \\r\\n    // Initialize these variables for the algorithm to meet your password complexity rules\\r\\n    const passwordLength = 12;\\r\\n    const minUpper = 1;\\r\\n    const maxUpper = 3;\\r\\n    const minNumeric = 0;\\r\\n    const maxNumeric = 2;\\r\\n    const minSpecial = 1;\\r\\n    const maxSpecial = 1;\\r\\n     \\r\\n     \\r\\n    // Do not change any code below this line !!!\\r\\n     \\r\\n    const numberUpper = Math.floor((Math.random() * maxUpper) + minUpper);\\r\\n    const numberNumeric = Math.floor((Math.random() * maxNumeric) + minNumeric);\\r\\n    const numberSpecial = Math.floor((Math.random() * maxSpecial) + minSpecial);\\r\\n    const numberLower = passwordLength - (numberUpper + numberNumeric + numberSpecial);\\r\\n                 \\r\\n    let upperChars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';\\r\\n    let lowerChars = 'abcdefghijklmnopqrstuvwxyz';\\r\\n    let numberChars = '0123456789';\\r\\n    let specialChars = '!#$@*?';\\r\\n     \\r\\n    let getRandomValue = function(values) {\\r\\n        return values.charAt(Math.floor(Math.random() * values.length));\\r\\n    };\\r\\n     \\r\\n    let password = [];\\r\\n    for(let i = 0; i < numberNumeric; ++i) { password.push(getRandomValue(numberChars)) }\\r\\n    for(let i = 0; i < numberUpper; ++i) { password.push(getRandomValue(upperChars)) }\\r\\n    for(let i = 0; i < numberSpecial; ++i) { password.push(getRandomValue(specialChars)) }   \\r\\n    for(let i = 0; i < numberLower; ++i) { password.push(getRandomValue(lowerChars)) }\\r\\n         \\r\\n    function randomizeCharSequence(passwordObject){\\r\\n        for(let j, x, i = passwordObject.length; i; j = Math.floor(Math.random() * i), x = passwordObject[--i], passwordObject[i] = passwordObject[j], passwordObject[j] = x);\\r\\n        return passwordObject;\\r\\n    }\\r\\n     \\r\\n    return randomizeCharSequence(password).join('');\\r\\n}\\r\\ngeneratePassword();\"",
+          "UsedInNotifications": false,
+          "StoreInAccountData": false
+        }
+      ]
+    },
+    {
+      "Name": "id",
       "Description": "",
       "Type": "Text",
       "MappingActions": [
@@ -13,6 +63,132 @@
           ],
           "MappingMode": "None",
           "Value": "null",
+          "UsedInNotifications": false,
+          "StoreInAccountData": true
+        }
+      ]
+    },
+    {
+      "Name": "type",
+      "Description": "",
+      "Type": "Text",
+      "MappingActions": [
+        {
+          "MapForActions": [
+            "Enable"
+          ],
+          "MappingMode": "Fixed",
+          "Value": "\"14\"",
+          "UsedInNotifications": false,
+          "StoreInAccountData": false
+        }
+      ]
+    },
+    {
+      "Name": "positionsPerOrgUnits",
+      "Description": "",
+      "Type": "Array",
+      "MappingActions": [
+        {
+          "MapForActions": [
+            "Create",
+            "Update"
+          ],
+          "MappingMode": "Complex",
+          "Value": "\"function GetPositionsPerOrgUnits(){\\r\\n    return []\\r\\n}\\r\\nGetPositionsPerOrgUnits()\"",
+          "UsedInNotifications": false,
+          "StoreInAccountData": false
+        }
+      ]
+    },
+    {
+      "Name": "enddate",
+      "Description": "",
+      "Type": "Text",
+      "MappingActions": [
+        {
+          "MapForActions": [
+            "Enable",
+            "Update"
+          ],
+          "MappingMode": "Complex",
+          "Value": "\"let formattedEndDate = \\\"\\\"\\r\\nlet endDate = Person.PrimaryContract.EndDate;\\r\\n\\r\\nfunction convertDate(date) {\\r\\n    let day = date.getDate();\\r\\n    day = day < 10 ? \\\"0\\\" + day : day;\\r\\n    let month = date.getMonth() + 1;\\r\\n    month = month < 10 ? \\\"0\\\" + month : month;\\r\\n    let year = date.getFullYear();\\r\\n    return year + \\\"-\\\" + month + \\\"-\\\" + day;\\r\\n}\\r\\n\\r\\nif (endDate != null) {\\r\\n    const date = new Date(endDate);\\r\\n    formattedEndDate = convertDate(date);\\r\\n} else {\\r\\n    formattedEndDate = \\\"9999-12-31\\\"\\r\\n}\"",
+          "UsedInNotifications": false,
+          "StoreInAccountData": false
+        },
+        {
+          "MapForActions": [
+            "Create"
+          ],
+          "MappingMode": "None",
+          "Value": "null",
+          "UsedInNotifications": false,
+          "StoreInAccountData": false
+        }
+      ]
+    },
+    {
+      "Name": "staffnumber",
+      "Description": "",
+      "Type": "Text",
+      "MappingActions": [
+        {
+          "MapForActions": [
+            "Create",
+            "Update"
+          ],
+          "MappingMode": "Field",
+          "Value": "\"Person.ExternalId\"",
+          "UsedInNotifications": false,
+          "StoreInAccountData": true
+        }
+      ]
+    },
+    {
+      "Name": "dateofbirth",
+      "Description": "",
+      "Type": "Text",
+      "MappingActions": [
+        {
+          "MapForActions": [
+            "Create",
+            "Update"
+          ],
+          "MappingMode": "Complex",
+          "Value": "\"const formatedBirthDatestamp = () => {\\r\\n    if (typeof Person.Details.BirthDate !== 'undefined' && Person.Details.BirthDate) {\\r\\n        const birthDate = Person.Details.BirthDate\\r\\n        const date = birthDate.toISOString().split('T')[0];\\r\\n        const time = \\\"00:00:00\\\" //birthDate.toTimeString().split(' ')[0].replace(/:/g, ':');\\r\\n        return `${date}T${time}Z`\\r\\n    } else {\\r\\n        return null\\r\\n    }\\r\\n}\\r\\n\\r\\nfunction GetFormattedBirthDate(){    \\r\\n    let formattedDate = formatedBirthDatestamp();\\r\\n    return formattedDate    \\r\\n}\\r\\nGetFormattedBirthDate()\"",
+          "UsedInNotifications": false,
+          "StoreInAccountData": false
+        }
+      ]
+    },
+    {
+      "Name": "supervisorid",
+      "Type": "Text",
+      "MappingActions": [
+        {
+          "MapForActions": [
+            "Create",
+            "Update"
+          ],
+          "MappingMode": "Field",
+          "Value": "\"Person.PrimaryManager.ExternalId\"",
+          "UsedInNotifications": false,
+          "StoreInAccountData": false
+        }
+      ]
+    },
+    {
+      "Name": "startdate",
+      "Description": "",
+      "Type": "Text",
+      "MappingActions": [
+        {
+          "MapForActions": [
+            "Create",
+            "Update"
+          ],
+          "MappingMode": "Complex",
+          "Value": "\"const formatedTimestamp = () => {\\r\\n    const startDate = Person.PrimaryContract.StartDate\\r\\n    const date = startDate.toISOString().split('T')[0];\\r\\n    const time = \\\"00:00:00\\\" //startDate.toTimeString().split(' ')[0].replace(/:/g, ':');\\r\\n    return `${date}T${time}Z`\\r\\n}\\r\\n\\r\\nfunction GetFormattedStartDate(){\\r\\n    let formattedDate = formatedTimestamp();\\r\\n    return formattedDate\\r\\n}\\r\\nGetFormattedStartDate()\"",
           "UsedInNotifications": false,
           "StoreInAccountData": false
         }
@@ -53,87 +229,18 @@
       ]
     },
     {
-      "Name": "lastname",
+      "Name": "name",
       "Description": "",
       "Type": "Text",
       "MappingActions": [
         {
           "MapForActions": [
-            "Create",
-            "Update"
+            "Enable"
           ],
           "MappingMode": "Complex",
-          "Value": "\"function generateLastName() {\\r\\n    let middleName = Person.Name.FamilyNamePrefix;\\r\\n    let lastName = Person.Name.FamilyName;\\r\\n    let middleNamePartner = Person.Name.FamilyNamePartnerPrefix;\\r\\n    let lastNamePartner = Person.Name.FamilyNamePartner;\\r\\n \\r\\n    let nameFormatted = \\\"\\\";\\r\\n \\r\\n    switch(Person.Name.Convention) {\\r\\n    case \\\"B\\\":        \\r\\n        nameFormatted = lastName;\\r\\n        break;\\r\\n    case \\\"P\\\":\\r\\n        nameFormatted = lastNamePartner;\\r\\n        break;\\r\\n    case \\\"BP\\\":        \\r\\n        nameFormatted = lastName + ' - ';\\r\\n        if (typeof middleNamePartner !== 'undefined' && middleNamePartner) { nameFormatted = nameFormatted + middleNamePartner + ' ' }\\r\\n        nameFormatted = nameFormatted + lastNamePartner;\\r\\n        break;\\r\\n    case \\\"PB\\\":        \\r\\n        nameFormatted = lastNamePartner + ' - ';\\r\\n        if (typeof middleName !== 'undefined' && middleName) { nameFormatted = nameFormatted + middleName + ' ' }\\r\\n        nameFormatted = nameFormatted + lastName;\\r\\n        break;\\r\\n    default:        \\r\\n        nameFormatted = lastName;\\r\\n        break;\\r\\n    }\\r\\n    lastName = nameFormatted.trim();\\r\\n \\r\\nreturn lastName;\\r\\n}\\r\\ngenerateLastName()\"",
+          "Value": "\"function getUserName() {\\r\\n    let username = '';\\r\\n\\r\\n    if (typeof Person.Accounts._bccd667807a9431a9d4acfc64c19a3d6.userPrincipalName !== 'undefined' && Person.Accounts._bccd667807a9431a9d4acfc64c19a3d6.userPrincipalName) {\\r\\n        username = Person.Accounts._bccd667807a9431a9d4acfc64c19a3d6.userPrincipalName;\\r\\n    }\\r\\n\\r\\n    return username;\\r\\n}\\r\\n\\r\\ngetUserName()\"",
           "UsedInNotifications": false,
           "StoreInAccountData": false
-        }
-      ]
-    },
-    {
-      "Name": "middlename",
-      "Description": "",
-      "Type": "Text",
-      "MappingActions": [
-        {
-          "MapForActions": [
-            "Create",
-            "Update"
-          ],
-          "MappingMode": "Complex",
-          "Value": "\"function generateMiddleName() {\\r\\n    let middleName = Person.Name.FamilyNamePrefix;\\r\\n    let middleNamePartner = Person.Name.FamilyNamePartnerPrefix;\\r\\n    \\r\\n    let nameFormatted = \\\"\\\";\\r\\n \\r\\n    switch(Person.Name.Convention) {\\r\\n    case \\\"B\\\":\\r\\n    case \\\"BP\\\":\\r\\n        if (typeof middleName !== 'undefined' && middleName) { nameFormatted = middleName }\\r\\n        break;\\r\\n    case \\\"P\\\":\\r\\n    case \\\"PB\\\":\\r\\n        if (typeof middleNamePartner !== 'undefined' && middleNamePartner) { nameFormatted = middleNamePartner  }\\r\\n        break;    \\r\\n    default:\\r\\n        if (typeof middleName !== 'undefined' && middleName) { nameFormatted = middleName  }\\r\\n        break;\\r\\n    }\\r\\n    middleName = nameFormatted.trim();\\r\\n \\r\\nreturn middleName;\\r\\n}\\r\\ngenerateMiddleName()\"",
-          "UsedInNotifications": false,
-          "StoreInAccountData": false
-        }
-      ]
-    },
-    {
-      "Name": "positionsPerOrgUnits",
-      "Description": "",
-      "Type": "Array",
-      "MappingActions": [
-        {
-          "MapForActions": [
-            "Create",
-            "Update"
-          ],
-          "MappingMode": "Complex",
-          "Value": "\"function GetPositionsPerOrgUnits(){\\r\\n    return []\\r\\n}\\r\\nGetPositionsPerOrgUnits()\"",
-          "UsedInNotifications": false,
-          "StoreInAccountData": false
-        }
-      ]
-    },
-    {
-      "Name": "staffnumber",
-      "Description": "",
-      "Type": "Text",
-      "MappingActions": [
-        {
-          "MapForActions": [
-            "Create",
-            "Update"
-          ],
-          "MappingMode": "Field",
-          "Value": "\"Person.ExternalId\"",
-          "UsedInNotifications": false,
-          "StoreInAccountData": true
-        }
-      ]
-    },
-    {
-      "Name": "id",
-      "Description": "",
-      "Type": "Text",
-      "MappingActions": [
-        {
-          "MapForActions": [
-            "Create",
-            "Update"
-          ],
-          "MappingMode": "None",
-          "Value": "null",
-          "UsedInNotifications": false,
-          "StoreInAccountData": true
         }
       ]
     },
@@ -148,57 +255,7 @@
             "Update"
           ],
           "MappingMode": "Complex",
-          "Value": "\"function GetEmailAddress(){\\r\\n    return Person.Accounts._bccd667807a9431a9d4acfc64c19a3d6.mail\\r\\n}\\r\\nGetEmailAddress()\"",
-          "UsedInNotifications": false,
-          "StoreInAccountData": false
-        }
-      ]
-    },
-    {
-      "Name": "supervisorid",
-      "Type": "Text",
-      "MappingActions": [
-        {
-          "MapForActions": [
-            "Create",
-            "Update"
-          ],
-          "MappingMode": "Field",
-          "Value": "\"Person.PrimaryManager.ExternalId\"",
-          "UsedInNotifications": false,
-          "StoreInAccountData": false
-        }
-      ]
-    },
-    {
-      "Name": "startdate",
-      "Description": "",
-      "Type": "Text",
-      "MappingActions": [
-        {
-          "MapForActions": [
-            "Create",
-            "Update"
-          ],
-          "MappingMode": "Complex",
-          "Value": "\"const formatedTimestamp = () => {\\r\\n    const startDate = Person.PrimaryContract.StartDate\\r\\n    const date = startDate.toISOString().split('T')[0];\\r\\n    const time = \\\"00:00:00\\\" //startDate.toTimeString().split(' ')[0].replace(/:/g, ':');\\r\\n    return `${date}T${time}Z`\\r\\n}\\r\\n\\r\\nfunction GetFormattedStartDate(){\\r\\n    let formattedDate = formatedTimestamp();\\r\\n    return formattedDate\\r\\n}\\r\\nGetFormattedStartDate()\"",
-          "UsedInNotifications": false,
-          "StoreInAccountData": false
-        }
-      ]
-    },
-    {
-      "Name": "birthdate",
-      "Description": "",
-      "Type": "Text",
-      "MappingActions": [
-        {
-          "MapForActions": [
-            "Create",
-            "Update"
-          ],
-          "MappingMode": "Complex",
-          "Value": "\"const formatedBirthDatestamp = () => {\\r\\n    const birthDate = Person.Details.BirthDate\\r\\n    const date = birthDate.toISOString().split('T')[0];\\r\\n    const time = \\\"00:00:00\\\" //birthDate.toTimeString().split(' ')[0].replace(/:/g, ':');\\r\\n    return `${date}T${time}Z`\\r\\n}\\r\\n\\r\\nfunction GetFormattedBirthDate(){\\r\\n    let formattedDate = formatedBirthDatestamp();\\r\\n    return formattedDate\\r\\n}\\r\\nGetFormattedBirthDate()\"",
+          "Value": "\"function getEmail() {\\r\\n    let mailaddress = '';\\r\\n\\r\\n    if (typeof Person.Accounts._bccd667807a9431a9d4acfc64c19a3d6.mail !== 'undefined' && Person.Accounts._bccd667807a9431a9d4acfc64c19a3d6.mail) {\\r\\n        mailaddress = Person.Accounts._bccd667807a9431a9d4acfc64c19a3d6.mail;\\r\\n    }\\r\\n\\r\\n    return mailaddress;\\r\\n}\\r\\n\\r\\ngetEmail()\"",
           "UsedInNotifications": false,
           "StoreInAccountData": false
         }

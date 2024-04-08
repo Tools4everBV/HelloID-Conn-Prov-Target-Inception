@@ -3,6 +3,10 @@
 # PowerShell V2
 # Version: 1.0.0
 #################################################
+
+# Set to true at start, because only when an error occurs it is set to false
+$outputContext.Success = $true
+
 # Enable TLS1.2
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
 
@@ -351,6 +355,13 @@ try {
                 throw "More than one active account was found for person with staffnumber [$($actionContext.Data.staffnumber)]. Please remove the obsolete account(s) or make sure that the obsolete account(s) are disabled and enable only the correct account."
             }
         }
+    } else {
+        $outputContext.AuditLogs.Add([PSCustomObject]@{
+                Action  = "CorrelateAccount"
+                Message = "Configuration of correlation is mandatory."
+                IsError = $true
+            })
+        throw "Configuration of correlation is mandatory."
     }
 
     $correlatedAccount = $resultGetEmployee.items | Select-Object -First 1
@@ -383,37 +394,15 @@ try {
         else {
             $actionContext.Data.PSObject.Properties.Remove('supervisorid')
         }
-    }
-
-    Write-Verbose 'Gathering Inception Positions and organization Units to map the against the HelloId person'
-    $positions = Get-InceptionPosition -Headers $headers -pageSize 1000
-    $orgUnits = Get-InceptionOrgunit -Headers $headers -pageSize 1000
-
-    $splatGetInceptionIds = @{
-        DesiredContracts      = $desiredContracts
-        LookupFieldPositionId = $titleLookupProperty
-        LookupFieldOrgunitId  = $departmentLookupProperty
-        MappingPositions      = ($positions | Group-Object Code -AsHashTable -AsString)
-        MappingOrgUnits       = ($orgUnits | Group-Object Code -AsHashTable -AsString)
-    }
-    
-    $desiredPositionList = Get-InceptionIdsFromHelloIdContract @splatGetInceptionIds
-
-    $splatPositionsPerOrgUnitsList = @{
-        DesiredPositions            = $desiredPositionList
-        CurrentPositionsInInception = $actionContext.Data.positionsPerOrgUnits
-    }
-
-    # Update function also writes auditlogs and dryrun logging
-    $actionContext.Data.positionsPerOrgUnits = ([array](Update-PositionsPerOrgUnitsList @splatPositionsPerOrgUnitsList -DryRunFlag:$($actionContext.DryRun)))
+    }    
     
     # Process
     if (-not($actionContext.DryRun -eq $true)) {
         switch ($action) {
             'CreateAccount' {                
                 Write-Verbose 'Gathering Inception Positions and organization Units to map the against the HelloId person'
-                $positions = Get-InceptionPosition -Headers $headers -pageSize 1000
-                $orgUnits = Get-InceptionOrgunit -Headers $headers -pageSize 1000
+                $positions = Get-InceptionPosition -Headers $headers
+                $orgUnits = Get-InceptionOrgunit -Headers $headers
 
                 $splatGetInceptionIds = @{
                     DesiredContracts      = $desiredContracts
@@ -440,8 +429,7 @@ try {
                     Headers     = $headers
                     Body        = ($actionContext.Data | ConvertTo-Json)
                     ContentType = 'application/json; charset=utf-8'
-                }
-                #Write-Verbose ($splatEmployeeCreateParams | ConvertTo-Json)
+                }                
                 $createdAccount = Invoke-RestMethod @splatEmployeeCreateParams -Verbose:$false
                 $createdAccount = $createdAccount | Select-Object -Property * -ExcludeProperty $excludedPropertiesArray
                 
@@ -503,4 +491,10 @@ catch {
             Message = $auditMessage
             IsError = $true
         })
+}
+finally {
+    # Check if auditLogs contains errors, if no errors are found, set success to true
+    if (-not($outputContext.AuditLogs.IsError -contains $true)) {
+        $outputContext.Success = $true
+    }
 }
