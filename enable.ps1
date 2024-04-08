@@ -4,8 +4,8 @@
 # Version: 2.0.0
 #################################################
 
-# Set to true at start, because only when an error occurs it is set to false
-$outputContext.Success = $true
+# Set to false at start, because only when no error occurs it is set to true
+$outputContext.Success = $false
 
 # Enable TLS1.2
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
@@ -188,7 +188,6 @@ try {
                     $userAuditMessage = 'Create User account'
                 }
 
-                $outputContext.Success = $true
                 $outputContext.AuditLogs.Add([PSCustomObject]@{
                         Message = "Enable Inception Employee account and $($userAuditMessage) was successful."
                         IsError = $false
@@ -197,7 +196,6 @@ try {
             }
 
             'NotFound' {
-                $outputContext.Success = $false
                 $outputContext.AuditLogs.Add([PSCustomObject]@{
                         Message = "Inception account: [$($actionContext.References.Account)] for person: [$($personContext.Person.DisplayName)] could not be found, possibly indicating that it could be deleted, or the account is not correlated"
                         IsError = $true
@@ -207,8 +205,7 @@ try {
         }
     }
 }
-catch {
-    $outputContext.success = $false
+catch {    
     $ex = $PSItem
     if ($($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or
         $($ex.Exception.GetType().FullName -eq 'System.Net.WebException')) {
