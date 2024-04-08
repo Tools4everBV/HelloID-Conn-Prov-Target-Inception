@@ -4,8 +4,8 @@
 # Version: 2.0.0
 #################################################
 
-# Set to true at start, because only when an error occurs it is set to false
-$outputContext.Success = $true
+# Set to false at start, because only when no error occurs it is set to true
+$outputContext.Success = $false
 
 # Enable TLS1.2
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
@@ -363,8 +363,7 @@ try {
         [array]$desiredContracts = $personContext.Person.Contracts | Where-Object { $_.Context.InConditions -eq $true }
     
         if ($actionContext.DryRun -eq $true) {
-            [array]$desiredContracts = $personContext.Person.Contracts
-            $outputContext.Success = $true
+            [array]$desiredContracts = $personContext.Person.Contracts            
         }
 
         Write-Verbose 'Gathering Inception Positions and organization Units to map the against the HelloId person'
@@ -451,7 +450,6 @@ try {
                 $null = Invoke-RestMethod @splatEmployeeUpdateParams -Verbose:$false
 
                 $outputContext.AccountReference.Positions = $positionsPerOrgUnits
-                $outputContext.Success = $true
                 $outputContext.AuditLogs.Add([PSCustomObject]@{
                         Message = "Update account was successful, Account property(s) updated: [$($propertiesChanged.name -join ',')]"
                         IsError = $false
@@ -462,7 +460,6 @@ try {
             'NoChanges' {
                 Write-Verbose "No changes to Inception account with accountReference: [$($actionContext.References.Account)]"
 
-                $outputContext.Success = $true
                 $outputContext.AuditLogs.Add([PSCustomObject]@{
                         Message = 'No changes will be made to the account during enforcement'
                         IsError = $false
@@ -471,7 +468,6 @@ try {
             }
 
             'NotFound' {
-                $outputContext.Success = $false
                 $outputContext.AuditLogs.Add([PSCustomObject]@{
                         Message = "Inception account for: [$($personContext.Person.DisplayName)] could not be found, possibly indicating that it could be deleted, or the account is not correlated"
                         IsError = $true
@@ -482,7 +478,6 @@ try {
     }
 }
 catch {
-    $outputContext.Success = $false
     $ex = $PSItem
     if ($($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or
         $($ex.Exception.GetType().FullName -eq 'System.Net.WebException')) {
