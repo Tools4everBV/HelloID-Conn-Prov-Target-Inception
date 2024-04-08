@@ -238,7 +238,7 @@
             "Enable"
           ],
           "MappingMode": "Complex",
-          "Value": "\"function getUserName() {\\r\\n    let username = '';\\r\\n\\r\\n    if (typeof Person.Accounts._bccd667807a9431a9d4acfc64c19a3d6.userPrincipalName !== 'undefined' && Person.Accounts._bccd667807a9431a9d4acfc64c19a3d6.userPrincipalName) {\\r\\n        username = Person.Accounts._bccd667807a9431a9d4acfc64c19a3d6.userPrincipalName;\\r\\n    }\\r\\n\\r\\n    return username;\\r\\n}\\r\\n\\r\\ngetUserName()\"",
+          "Value": "\"function getUserName() {\\r\\n    let username = '';\\r\\n\\r\\n    if (typeof Person.Accounts.MicrosoftActiveDirectory.userPrincipalName !== 'undefined' && Person.Accounts.MicrosoftActiveDirectory.userPrincipalName) {\\r\\n        username = Person.Accounts.MicrosoftActiveDirectory.userPrincipalName;\\r\\n    }\\r\\n\\r\\n    return username;\\r\\n}\\r\\n\\r\\ngetUserName()\"",
           "UsedInNotifications": false,
           "StoreInAccountData": false
         }
@@ -255,7 +255,7 @@
             "Update"
           ],
           "MappingMode": "Complex",
-          "Value": "\"function getEmail() {\\r\\n    let mailaddress = '';\\r\\n\\r\\n    if (typeof Person.Accounts._bccd667807a9431a9d4acfc64c19a3d6.mail !== 'undefined' && Person.Accounts._bccd667807a9431a9d4acfc64c19a3d6.mail) {\\r\\n        mailaddress = Person.Accounts._bccd667807a9431a9d4acfc64c19a3d6.mail;\\r\\n    }\\r\\n\\r\\n    return mailaddress;\\r\\n}\\r\\n\\r\\ngetEmail()\"",
+          "Value": "\"function getEmail() {\\r\\n    let mailaddress = '';\\r\\n\\r\\n    if (typeof Person.Accounts.MicrosoftActiveDirectory.mail !== 'undefined' && Person.Accounts.MicrosoftActiveDirectory.mail) {\\r\\n        mailaddress = Person.Accounts.MicrosoftActiveDirectory.mail;\\r\\n    }\\r\\n\\r\\n    return mailaddress;\\r\\n}\\r\\n\\r\\ngetEmail()\"",
           "UsedInNotifications": false,
           "StoreInAccountData": false
         }
