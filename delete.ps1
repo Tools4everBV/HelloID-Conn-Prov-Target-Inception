@@ -4,8 +4,8 @@
 # Version: 2.0.0
 ##################################################
 
-# Set to true at start, because only when an error occurs it is set to false
-$outputContext.Success = $true
+# Set to false at start, because only when no error occurs it is set to true
+$outputContext.Success = $false
 
 # Enable TLS1.2
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
@@ -238,7 +238,6 @@ try {
                     $null = Invoke-RestMethod @splatEmployeeDisableParams -Verbose:$false
                 }
 
-                $outputContext.Success = $true
                 $outputContext.AuditLogs.Add([PSCustomObject]@{
                         Message = 'Disable Inception Employee and Delete user account was successful'
                         IsError = $false
@@ -246,8 +245,7 @@ try {
                 break
             }
 
-            'NotFound' {
-                $outputContext.Success = $true
+            'NotFound' {                
                 $outputContext.AuditLogs.Add([PSCustomObject]@{
                         Message = "Inception account: [$($actionContext.References.Account.AccountReference)] for person: [$($personContext.Person.DisplayName)] could not be found, possibly indicating that it could be deleted, or the account is not correlated"
                         IsError = $false
@@ -257,8 +255,7 @@ try {
         }
     }
 }
-catch {
-    $outputContext.success = $false
+catch {    
     $ex = $PSItem
     if ($($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or
         $($ex.Exception.GetType().FullName -eq 'System.Net.WebException')) {
