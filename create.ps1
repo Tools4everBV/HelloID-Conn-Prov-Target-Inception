@@ -4,8 +4,8 @@
 # Version: 2.0.0
 #################################################
 
-# Set to true at start, because only when an error occurs it is set to false
-$outputContext.Success = $true
+# Set to false at start, because only when no error occurs it is set to true
+$outputContext.Success = $false
 
 # Enable TLS1.2
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
@@ -465,8 +465,7 @@ try {
             Positions        = $desiredPositionList | Select-Object * -ExcludeProperty SideIndicator
         }
 
-        $outputContext.AccountReference = $accountReferenceObject
-        $outputContext.success = $true
+        $outputContext.AccountReference = $accountReferenceObject        
         $outputContext.AuditLogs.Add([PSCustomObject]@{
                 Action  = $action
                 Message = $auditLogMessage
@@ -474,8 +473,7 @@ try {
             })
     }
 }
-catch {
-    $outputContext.success = $false
+catch {    
     $ex = $PSItem
     if ($($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or
         $($ex.Exception.GetType().FullName -eq 'System.Net.WebException')) {
