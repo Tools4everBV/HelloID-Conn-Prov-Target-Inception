@@ -1,7 +1,7 @@
 #################################################
 # HelloID-Conn-Prov-Target-Inception-Update
 # PowerShell V2
-# Version: 1.0.0
+# Version: 2.0.0
 #################################################
 
 # Set to true at start, because only when an error occurs it is set to false
@@ -415,7 +415,7 @@ try {
 
     # Add a message and the result of each of the validations showing what will happen during enforcement
     if ($actionContext.DryRun -eq $true) {
-        Write-Verbose "[DryRun] $dryRunMessage" -Verbose
+        Write-Verbose "[DryRun] $dryRunMessage" 
     }
 
     # Process
