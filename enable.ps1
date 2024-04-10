@@ -1,27 +1,19 @@
-###########################################
+#################################################
 # HelloID-Conn-Prov-Target-Inception-Enable
-#
-# Version: 1.0.1
-###########################################
-# Initialize default values
-$config = $configuration | ConvertFrom-Json
-$p = $person | ConvertFrom-Json
-$aRef = $AccountReference | ConvertFrom-Json
-$success = $false
-$auditLogs = [System.Collections.Generic.List[PSCustomObject]]::new()
+# PowerShell V2
+# Version: 2.0.0
+#################################################
+
+# Set to false at start, because only when no error occurs it is set to true
+$outputContext.Success = $false
 
 # Enable TLS1.2
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
 
 # Set debug logging
-switch ($($config.IsDebug)) {
+switch ($($actionContext.Configuration.isDebug)) {
     $true { $VerbosePreference = 'Continue' }
     $false { $VerbosePreference = 'SilentlyContinue' }
-}
-
-function Get-RandomCharacters($length, $characters) { 
-    $random = 1..$length | ForEach-Object { Get-Random -Maximum $characters.length }
-    return [String]$characters[$random]
 }
 
 #region functions
@@ -30,19 +22,19 @@ function Get-InceptionToken {
     param()
     try {
         $splatTokenParams = @{
-            Uri     = "$($config.BaseUrl)/api/v2/authentication/login"
+            Uri     = "$($actionContext.Configuration.BaseUrl)/api/v2/authentication/login"
             Method  = 'POST'
             Body    = @{
-                username = $config.UserName
-                password = $config.Password
+                username = $actionContext.Configuration.UserName
+                password = $actionContext.Configuration.Password
             } | ConvertTo-Json
             Headers = @{
                 Accept         = 'application/json'
                 'Content-Type' = 'application/json'
             }
         }
+        
         $tokenResponse = Invoke-RestMethod @splatTokenParams -Verbose:$false
-
         Write-Output $tokenResponse.Token
     }
     catch {
@@ -64,86 +56,55 @@ function Resolve-InceptionError {
             ErrorDetails     = $ErrorObject.Exception.Message
             FriendlyMessage  = $ErrorObject.Exception.Message
         }
-        $webresponse = $false
-        if ($ErrorObject.ErrorDetails) {
-            $httpErrorObj.ErrorDetails = $ErrorObject.ErrorDetails
-            $httpErrorObj.FriendlyMessage = $ErrorObject.ErrorDetails
-            $webresponse = $true
+        if (-not [string]::IsNullOrEmpty($ErrorObject.ErrorDetails.Message)) {
+            $httpErrorObj.ErrorDetails = $ErrorObject.ErrorDetails.Message
         }
-        elseif ((-not($null -eq $ErrorObject.Exception.Response) -and $ErrorObject.Exception.GetType().FullName -eq 'System.Net.WebException')) {
-            $streamReaderResponse = [System.IO.StreamReader]::new($ErrorObject.Exception.Response.GetResponseStream()).ReadToEnd()
-            if (-not([string]::IsNullOrWhiteSpace($streamReaderResponse))) {
-                $httpErrorObj.ErrorDetails = $streamReaderResponse
-                $httpErrorObj.FriendlyMessage = $streamReaderResponse
-                $webresponse = $true
-            }
-        }
-        if ($webresponse) {
-            try {
-                $convertedErrorObject = ($httpErrorObj.FriendlyMessage | ConvertFrom-Json)
-                if (-not [string]::IsNullOrEmpty($convertedErrorObject.languageString)) {
-                    $httpErrorObj.FriendlyMessage = $convertedErrorObject.LanguageString
-                }
-                elseif (-not [string]::IsNullOrEmpty($convertedErrorObject.description)) {
-                    $httpErrorObj.FriendlyMessage = $convertedErrorObject.Description
+        elseif ($ErrorObject.Exception.GetType().FullName -eq 'System.Net.WebException') {
+            if ($null -ne $ErrorObject.Exception.Response) {
+                $streamReaderResponse = [System.IO.StreamReader]::new($ErrorObject.Exception.Response.GetResponseStream()).ReadToEnd()
+                if (-not [string]::IsNullOrEmpty($streamReaderResponse)) {
+                    $httpErrorObj.ErrorDetails = $streamReaderResponse
                 }
             }
-            catch {
-                Write-Warning "Unexpected webservice response, Error during Json conversion: $($_.Exception.Message)"
+        }
+        try {
+            $errorDetailsObject = ($httpErrorObj.ErrorDetails | ConvertFrom-Json)
+            # Make sure to inspect the error result object and add only the error message as a FriendlyMessage.
+            if (-not [string]::IsNullOrEmpty($errorDetailsObject.languageString)) {
+                $httpErrorObj.FriendlyMessage = $errorDetailsObject.LanguageString
             }
+            elseif (-not [string]::IsNullOrEmpty($errorDetailsObject.description)) {
+                $httpErrorObj.FriendlyMessage = $errorDetailsObject.Description
+            }            
+            $httpErrorObj.FriendlyMessage = $httpErrorObj.ErrorDetails # Temporarily assignment
+        }
+        catch {
+            $httpErrorObj.FriendlyMessage = $httpErrorObj.ErrorDetails
         }
         Write-Output $httpErrorObj
     }
 }
 #endregion
 
-$accountUser = [PSCustomObject]@{
-    id       = $aRef.AccountReference
-    type     = 14
-    name     = $p.Contact.Business.Email # UPN
-    password = (Get-RandomCharacters -length 10 -characters 'abcdefghijklmnopqrstuvwxyzABCDEFGHKLMNOPRSTUVWXYZ1234567890!@#%&+{}') # Only used with new creations. Proprety is mandatory but is not used when using SSO.
-}
-
-# Begin
 try {
-    Write-Verbose "Verifying if a Inception account for [$($p.DisplayName)] exists"
+    # Verify if [aRef] has a value
+    if ([string]::IsNullOrEmpty($($actionContext.References.Account))) {
+        throw 'The account reference could not be found'
+    }
+
+    Write-Verbose "Verifying if an Inception account for [$($personContext.Person.DisplayName)] (still) exists"
     $headers = [System.Collections.Generic.Dictionary[string, string]]::new()
     $headers.Add('Authorization', "Bearer $(Get-InceptionToken)")
     $headers.Add('Accept', 'application/json')
     $headers.Add('Content-Type', 'application/json')
 
-    if ([string]::IsNullOrEmpty($($aRef.AccountReference))) {
-        throw 'No Account Reference found'
-    }
-
-    $employeeFound = $false
-    $userFound = $false
     try {
         $splatUserParams = @{
-            Uri     = "$($config.BaseUrl)/api/v2/hrm/employees/$($aRef.AccountReference)"
+            Uri     = "$($actionContext.Configuration.BaseUrl)/api/v2/hrm/employees/$($actionContext.References.Account.AccountReference)"
             Method  = 'GET'
             Headers = $Headers
         }
-        $employee = Invoke-RestMethod @splatUserParams -Verbose:$false
-        $employeeFound = $true
-    }
-    catch {
-        if ( $_.Exception.message -notmatch '404' ) {
-            throw $_
-        }
-    }
-    if (-not  $employeeFound) {
-        throw "Employee account [$($aRef.AccountReference)] not found. Possibly deleted"
-    }
-
-    try {
-        $splatUserParams = @{
-            Uri     = "$($config.BaseUrl)/api/v2/security/users/$($aRef.AccountReference)"
-            Method  = 'GET'
-            Headers = $Headers
-        }
-        $user = Invoke-RestMethod @splatUserParams -Verbose:$false
-        $userFound = $true
+        $correlatedAccount = Invoke-RestMethod @splatUserParams -Verbose:$false        
     }
     catch {
         if ( $_.Exception.message -notmatch '404' ) {
@@ -151,96 +112,119 @@ try {
         }
     }
 
+    try {
+        $splatUserParams = @{
+            Uri     = "$($actionContext.Configuration.BaseUrl)/api/v2/security/users/$($actionContext.References.Account.AccountReference)"
+            Method  = 'GET'
+            Headers = $Headers
+        }
+        $correlatedUser = Invoke-RestMethod @splatUserParams -Verbose:$false        
+    }
+    catch {
+        if ( $_.Exception.message -notmatch '404' ) {
+            throw $_
+        }
+    }
 
-
-    # Add an auditMessage showing what will happen during enforcement
-    if ($dryRun -eq $true) {
-        Write-Warning "[DryRun] Enable Inception Employee account for: [$($p.DisplayName)] will be executed during enforcement"
-        if ($userFound) {
-            Write-Warning "[DryRun] Enable Inception User account for: [$($p.DisplayName)] will be executed during enforcement"
+    if ($null -ne $correlatedAccount) {
+        $action = 'EnableAccount'
+        $dryRunMessage = "Enable Inception Employee account: [$($actionContext.References.Account.AccountReference)] for person: [$($personContext.Person.DisplayName)] will be executed during enforcement."
+        if ($null -ne $correlatedUser) {
+            $dryRunMessage += " Next Enable Inception User account for: [$($personContext.Person.DisplayName)] will be executed."
         }
         else {
-            Write-Warning "[DryRun] Create Inception User account for: [$($p.DisplayName)] will be executed during enforcement"
+            $dryRunMessage += " Next Create Inception User account for: [$($personContext.Person.DisplayName)] will be executed."
         }
     }
+    else {
+        $action = 'NotFound'
+        $dryRunMessage = "Inception Employee account: [$($actionContext.References.Account.AccountReference)] for person: [$($personContext.Person.DisplayName)] could not be found, possibly indicating that it could be deleted, or the account is not correlated."
+    }
+
+    # Add a message and the result of each of the validations showing what will happen during enforcement
+    if ($actionContext.DryRun -eq $true) {
+        Write-Verbose "[DryRun] $dryRunMessage"
+    }
+    $actionContext.Data.id = $actionContext.References.Account.AccountReference
 
     # Process
-    if (-not($dryRun -eq $true)) {
-        Write-Verbose "Enabling Inception account with accountReference: [$($aRef.AccountReference)]"
-        if ($employee.enddate) {
-            $employeeEndDate = '9999-12-31'
-        }
-        $splatEnableEmployee = @{
-            Uri     = "$($config.BaseUrl)/api/v2/hrm/employees/$($aRef.AccountReference)"
-            Method  = 'PUT'
-            Headers = $Headers
-            Body    = @{
-                state   = 20
-                enddate = $employeeEndDate
-            } | ConvertTo-Json
-        }
-        $employee = Invoke-RestMethod @splatEnableEmployee -Verbose:$false # Exception not found
+    if (-not($actionContext.DryRun -eq $true)) {
+        switch ($action) {
+            'EnableAccount' {
+                Write-Verbose "Enabling Inception account with accountReference: [$($actionContext.References.Account.AccountReference)]"
+                $splatEnableEmployee = @{
+                    Uri     = "$($actionContext.Configuration.BaseUrl)/api/v2/hrm/employees/$($actionContext.References.Account.AccountReference)"
+                    Method  = 'PUT'
+                    Headers = $Headers
+                    Body    = @{
+                        state   = 20
+                        enddate = $actionContext.Data.enddate
+                    } | ConvertTo-Json
+                }
+                $null = Invoke-RestMethod @splatEnableEmployee -Verbose:$false
 
-        if ($userFound) {
-            Write-Verbose 'Updating enddate of Exising User account'
-            if ($user.enddate) {
-                $userEndDate = '9999-12-31'
+                if ($correlatedUser) {
+                    Write-Verbose 'Updating enddate of Exising User account'
+                    $splatEnableUser = @{
+                        Uri     = "$($actionContext.Configuration.BaseUrl)/api/v2/security/users/$($actionContext.References.Account.AccountReference)"
+                        Method  = 'PUT'
+                        Headers = $Headers
+                        Body    = @{
+                            enddate = $actionContext.Data.enddate
+                        } | ConvertTo-Json
+                    }
+                    $null = Invoke-RestMethod @splatEnableUser -Verbose:$false
+                    $userAuditMessage = 'Enable User account'
+                }
+                else {
+                    Write-Verbose 'Creating new User account'
+                    $splatNewUser = @{
+                        Uri     = "$($actionContext.Configuration.BaseUrl)/api/v2/security/users"
+                        Method  = 'POST'
+                        Headers = $Headers
+                        Body    = $actionContext.Data | ConvertTo-Json
+                    }
+                    $null = Invoke-RestMethod @splatNewUser -Verbose:$false
+                    $userAuditMessage = 'Create User account'
+                }
+
+                $outputContext.AuditLogs.Add([PSCustomObject]@{
+                        Message = "Enable Inception Employee account and $($userAuditMessage) was successful."
+                        IsError = $false
+                    })
+                break
             }
-            $splatEnableUser = @{
-                Uri     = "$($config.BaseUrl)/api/v2/security/users/$($aRef.AccountReference)"
-                Method  = 'PUT'
-                Headers = $Headers
-                Body    = @{
-                    enddate = $userEndDate
-                } | ConvertTo-Json
+
+            'NotFound' {
+                $outputContext.AuditLogs.Add([PSCustomObject]@{
+                        Message = "Inception account: [$($actionContext.References.Account)] for person: [$($personContext.Person.DisplayName)] could not be found, possibly indicating that it could be deleted, or the account is not correlated"
+                        IsError = $true
+                    })
+                break
             }
-            $user = Invoke-RestMethod @splatEnableUser -Verbose:$false
-            $userAuditMessage = 'Enable User account'
         }
-        else {
-            Write-Verbose 'Creating new User account'
-            $splatNewUser = @{
-                Uri     = "$($config.BaseUrl)/api/v2/security/users"
-                Method  = 'POST'
-                Headers = $Headers
-                Body    = $accountUser | ConvertTo-Json
-            }
-            $user = Invoke-RestMethod @splatNewUser -Verbose:$false
-            $userAuditMessage = 'Create User account'
-        }
-        $auditLogs.Add([PSCustomObject]@{
-                Message = "Enable Inception Employee account and $($userAuditMessage) was successful."
-                IsError = $false
-            })
     }
-    $success = $true
 }
-catch {
-    $success = $false
+catch {    
     $ex = $PSItem
     if ($($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or
         $($ex.Exception.GetType().FullName -eq 'System.Net.WebException')) {
         $errorObj = Resolve-InceptionError -ErrorObject $ex
         $auditMessage = "Could not enable Inception account. Error: $($errorObj.FriendlyMessage)"
-        Write-Verbose "Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
+        Write-Warning "Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
     }
     else {
-        $auditMessage = "Could not enable Inception account. Error: $($ex.Exception.Message)"
-        Write-Verbose "Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)"
+        $auditMessage = "Could not enable Inception account. Error: $($_.Exception.Message)"
+        Write-Warning "Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)"
     }
-    if ($dryrun -eq $true) {
-        Write-Warning "[DryRun] $($auditMessage)"
-    }
-    $auditLogs.Add([PSCustomObject]@{
+    $outputContext.AuditLogs.Add([PSCustomObject]@{
             Message = $auditMessage
             IsError = $true
         })
-    # End
 }
 finally {
-    $result = [PSCustomObject]@{
-        Success   = $success
-        Auditlogs = $auditLogs
+    # Check if auditLogs contains errors, if no errors are found, set success to true
+    if (-not($outputContext.AuditLogs.IsError -contains $true)) {
+        $outputContext.Success = $true
     }
-    Write-Output $result | ConvertTo-Json -Depth 10
 }

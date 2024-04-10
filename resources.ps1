@@ -1,56 +1,29 @@
-#############################################
-# HelloID-Conn-Prov-Target-Inception-Resource
-#
-# Version: 1.0.2
-#############################################
-# Initialize default values
-$config = $configuration | ConvertFrom-Json
-$rRef = $resourceContext | ConvertFrom-Json
-$success = $false
-$auditLogs = [System.Collections.Generic.List[PSCustomObject]]::new()
+####################################################
+# HelloID-Conn-Prov-Target-Inception-Resources
+# PowerShell V2
+# Version: 2.0.0
+####################################################
+
+# Set to false at start, because only when no error occurs it is set to true
+$outputContext.Success = $false
+
+# Enable TLS1.2
+[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
+
+# Set debug logging
+switch ($($actionContext.Configuration.isDebug)) {
+    $true { $VerbosePreference = 'Continue' }
+    $false { $VerbosePreference = 'SilentlyContinue' }
+}
 
 # Mapping Custom Fields in case of not using Github example customfieldnames
 $DepartmentCode = 'DepartmentCode'
 $DepartmentDescription = 'DepartmentDescription'
 $TitleCode = 'TitleCode'
 $TitleDescription = 'TitleDescription'
-
-$rRef.sourceData = ($rRef.sourceData | Where-Object { -not [string]::IsNullOrEmpty($_.$DepartmentCode) })
-
-# Enable TLS1.2
-[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
-
-# Set debug logging
-switch ($($config.IsDebug)) {
-    $true { $VerbosePreference = 'Continue' }
-    $false { $VerbosePreference = 'SilentlyContinue' }
-}
+$resourceContext.sourceData = ($resourceContext.sourceData | Where-Object { -not [string]::IsNullOrEmpty($_.$DepartmentCode) })
 
 #region functions
-function Get-InceptionToken {
-    [CmdletBinding()]
-    param()
-    try {
-        $splatTokenParams = @{
-            Uri     = "$($config.BaseUrl)/api/v2/authentication/login"
-            Method  = 'POST'
-            Body    = @{
-                username = $config.UserName
-                password = $config.Password
-            } | ConvertTo-Json
-            Headers = @{
-                Accept         = 'application/json'
-                'Content-Type' = 'application/json'
-            }
-        }
-        $tokenResponse = Invoke-RestMethod @splatTokenParams -Verbose:$false
-
-        Write-Output $tokenResponse.Token
-    } catch {
-        $PSCmdlet.ThrowTerminatingError($_)
-    }
-}
-
 function Resolve-InceptionError {
     [CmdletBinding()]
     param (
@@ -70,7 +43,8 @@ function Resolve-InceptionError {
             $httpErrorObj.ErrorDetails = $ErrorObject.ErrorDetails
             $httpErrorObj.FriendlyMessage = $ErrorObject.ErrorDetails
             $webresponse = $true
-        } elseif ((-not($null -eq $ErrorObject.Exception.Response) -and $ErrorObject.Exception.GetType().FullName -eq 'System.Net.WebException')) {
+        }
+        elseif ((-not($null -eq $ErrorObject.Exception.Response) -and $ErrorObject.Exception.GetType().FullName -eq 'System.Net.WebException')) {
             $streamReaderResponse = [System.IO.StreamReader]::new($ErrorObject.Exception.Response.GetResponseStream()).ReadToEnd()
             if (-not([string]::IsNullOrWhiteSpace($streamReaderResponse))) {
                 $httpErrorObj.ErrorDetails = $streamReaderResponse
@@ -83,20 +57,48 @@ function Resolve-InceptionError {
                 $convertedErrorObject = ($httpErrorObj.FriendlyMessage | ConvertFrom-Json)
                 if (-not [string]::IsNullOrEmpty($convertedErrorObject.languageString)) {
                     $httpErrorObj.FriendlyMessage = $convertedErrorObject.LanguageString
-                } elseif (-not [string]::IsNullOrEmpty($convertedErrorObject.description)) {
+                }
+                elseif (-not [string]::IsNullOrEmpty($convertedErrorObject.description)) {
                     $httpErrorObj.FriendlyMessage = $convertedErrorObject.Description
                 }
-            } catch {
+            }
+            catch {
                 Write-Warning "Unexpected webservice response, Error during Json conversion: $($_.Exception.Message)"
             }
         }
         Write-Output $httpErrorObj
     }
 }
+
+function Get-InceptionToken {
+    [CmdletBinding()]
+    param()
+    try {
+        $splatTokenParams = @{
+            Uri     = "$($actionContext.Configuration.BaseUrl)/api/v2/authentication/login"
+            Method  = 'POST'
+            Body    = @{
+                username = $actionContext.Configuration.UserName
+                password = $actionContext.Configuration.Password
+            } | ConvertTo-Json
+            Headers = @{
+                Accept         = 'application/json'
+                'Content-Type' = 'application/json'
+            }
+        }
+        
+        $tokenResponse = Invoke-RestMethod @splatTokenParams -Verbose:$false
+        Write-Output $tokenResponse.Token
+    }
+    catch {
+        $PSCmdlet.ThrowTerminatingError($_)
+    }
+}
+
 function Get-InceptionPositions {
     [CmdletBinding()]
     Param(
-        $PageSize = 200,
+        $pageSize = 200,
 
         $headers
     )
@@ -105,11 +107,12 @@ function Get-InceptionPositions {
         $positions = [System.Collections.Generic.list[object]]::new()
         do {
             $splatUserParams = @{
-                Uri     = "$($config.BaseUrl)/api/v2/hrm/positions?pagesize=$PageSize&page=$pageNumber"
+                Uri     = "$($actionContext.Configuration.BaseUrl)/api/v2/hrm/positions?pagesize=$pageSize&page=$pageNumber"
                 Method  = 'GET'
                 Headers = $headers
             }
-            $positionsResponse = Invoke-RestMethod @splatUserParams -Verbose:$false # Exception not found
+            Write-Verbose "$($splatUserParams.Uri)"
+            $positionsResponse = Invoke-RestMethod @splatUserParams -Verbose:$false
 
             if ($null -ne $positionsResponse.items) {
                 $positions.AddRange($positionsResponse.items)
@@ -119,7 +122,8 @@ function Get-InceptionPositions {
         }until ( $positions.count -eq $positionsResponse.total )
         Write-Output $positions
 
-    } catch {
+    }
+    catch {
         $PSCmdlet.ThrowTerminatingError($_)
     }
 }
@@ -127,20 +131,20 @@ function Get-InceptionPositions {
 function Get-InceptionOrgunits {
     [CmdletBinding()]
     Param(
-        $PageSize = 200,
-
-        $Headers
+        $pageSize = 200,
+        $headers
     )
     try {
         $pageNumber = 1
         $orgunits = [System.Collections.Generic.list[object]]::new()
         do {
             $splatUserParams = @{
-                Uri     = "$($config.BaseUrl)/api/v2/hrm/orgunits?pagesize=$PageSize&page=$pageNumber"
+                Uri     = "$($actionContext.Configuration.BaseUrl)/api/v2/hrm/orgunits?pagesize=$pageSize&page=$pageNumber"
                 Method  = 'GET'
-                Headers = $Headers
+                Headers = $headers
             }
-            $orgunitsResponse = Invoke-RestMethod @splatUserParams -Verbose:$false # Exception not found
+            Write-Verbose "$($splatUserParams.Uri)"
+            $orgunitsResponse = Invoke-RestMethod @splatUserParams -Verbose:$false
 
             if ($null -ne $orgunitsResponse.items) {
                 $orgunits.AddRange($orgunitsResponse.items)
@@ -150,71 +154,71 @@ function Get-InceptionOrgunits {
         }until ( $orgunits.count -eq $orgunitsResponse.total )
         Write-Output $orgunits
 
-    } catch {
+    }
+    catch {
         $PSCmdlet.ThrowTerminatingError($_)
     }
 }
 #endregion
 
+
+Write-Verbose "Creating [$($resourceContext.SourceData.Count)] resources"
 try {
-    # Process
-    if (-not ($dryRun -eq $true)) {
-        Write-Verbose "Creating [$($rRef.SourceData.count)] resources"
-        try {
-            <# Resource creation preview uses a timeout of 30 seconds
-                while actual run has a timeout of 10 minutes #>
-            $headers = @{
-                Accept        = 'application/json'
-                Authorization = "Bearer $(Get-InceptionToken)"
+    <# Resource creation preview uses a timeout of 30 seconds while actual run has timeout of 10 minutes #>
+    $headers = @{
+        Accept        = 'application/json'
+        Authorization = "Bearer $(Get-InceptionToken)"
+    }
+
+    $OrgUnits = Get-InceptionOrgunits -Headers $headers
+    $positions = Get-InceptionPositions -Headers $headers
+
+
+    foreach ($resource in $resourceContext.SourceData) {            
+        if (-not ($actionContext.DryRun -eq $True)) {
+            $targetOrgUnit = ($OrgUnits | Where-Object -Property code -eq $resource.$DepartmentCode)
+            if ($targetOrgUnit.count -eq 0) {
+                $body = @{
+                    code        = $orgUnit.$DepartmentCode
+                    name        = $orgUnit.$DepartmentDescription
+                    description = $orgUnit.$DepartmentDescription
+                    state       = 20
+                }
+                $splatCreateOrgunitParams = @{
+                    Uri         = "$($actionContext.Configuration.BaseUrl)/api/v2/hrm/orgunits"
+                    Method      = 'POST'
+                    Headers     = $Headers
+                    Body        = ($body | ConvertTo-Json)
+                    ContentType = 'application/json; charset=utf-8'
+                }
+                $orgunitsResponse = Invoke-RestMethod @splatCreateOrgunitParams -Verbose:$false # Exception not found
+                $OrgUnits += $orgunitsResponse
+
+                $outputContext.AuditLogs.Add([PSCustomObject]@{
+                        Message = "Created orgUnit: [$($orgUnit.$DepartmentCode)]"
+                        IsError = $false
+                    })
             }
-
-            $OrgUnits = Get-InceptionOrgunits -Headers $headers
-            $positions = Get-InceptionPositions -Headers $headers
-
-            foreach ($orgUnit in $rRef.sourceData) {
-                $targetOrgUnit = ($OrgUnits | Where-Object -Property code -eq $orgunit.$DepartmentCode)
-                if ($targetOrgUnit.count -eq 0) {
+            else {
+                $orgUnit = $OrgUnits | Where-Object -Property code -eq $orgunit.$DepartmentCode
+                if ($orgUnit.state -ne 20) {
                     $body = @{
-                        code        = $orgUnit.$DepartmentCode
-                        name        = $orgUnit.$DepartmentDescription
-                        description = $orgUnit.$DepartmentDescription
-                        state       = 20
+                        state = 20
                     }
                     $splatCreateOrgunitParams = @{
-                        Uri         = "$($config.BaseUrl)/api/v2/hrm/orgunits"
-                        Method      = 'POST'
+                        Uri         = "$($actionContext.Configuration.BaseUrl)/api/v2/hrm/orgunits/$($orgUnit.id)"
+                        Method      = 'PUT'
                         Headers     = $Headers
                         Body        = ($body | ConvertTo-Json)
                         ContentType = 'application/json; charset=utf-8'
+
                     }
                     $orgunitsResponse = Invoke-RestMethod @splatCreateOrgunitParams -Verbose:$false # Exception not found
-                    $OrgUnits += $orgunitsResponse
-
-                    $auditLogs.Add([PSCustomObject]@{
-                            Message = "Created orgUnit: [$($orgUnit.$DepartmentCode)]"
-                            IsError = $false
-                        })
-                } else {
-                    $orgUnit = $OrgUnits | Where-Object -Property code -eq $orgunit.$DepartmentCode
-                    if ($orgUnit.state -ne 20) {
-                        $body = @{
-                            state = 20
-                        }
-                        $splatCreateOrgunitParams = @{
-                            Uri         = "$($config.BaseUrl)/api/v2/hrm/orgunits/$($orgUnit.id)"
-                            Method      = 'PUT'
-                            Headers     = $Headers
-                            Body        = ($body | ConvertTo-Json)
-                            ContentType = 'application/json; charset=utf-8'
-
-                        }
-                        $orgunitsResponse = Invoke-RestMethod @splatCreateOrgunitParams -Verbose:$false # Exception not found
-                    }
                 }
             }
 
             $groupedOrgUnits = $OrgUnits | Group-Object -Property code -AsString -AsHashTable
-            $groupedPositions = $rRef.SourceData | Group-Object -Property $TitleCode -AsString -AsHashTable
+            $groupedPositions = $resourceContext.SourceData | Group-Object -Property $TitleCode -AsString -AsHashTable
 
             foreach ($key in $groupedPositions.Keys) {
                 $targetPosition = $positions | Where-Object -Property code -eq $key
@@ -233,30 +237,31 @@ try {
                         belongstoorgunits = $departmentIds
                     }
                     $splatCreatePositionsParams = @{
-                        Uri         = "$($config.BaseUrl)/api/v2/hrm/positions"
+                        Uri         = "$($actionContext.Configuration.BaseUrl)/api/v2/hrm/positions"
                         Method      = 'POST'
                         Headers     = $Headers
                         Body        = ($body | ConvertTo-Json)
                         ContentType = 'application/json; charset=utf-8'
                     }
-
+                    
                     $positionsResponse = Invoke-RestMethod @splatCreatePositionsParams -Verbose:$false # Exception not found
                     $positions += $positionsResponse
 
-                    $auditLogs.Add([PSCustomObject]@{
+                    $outputContext.AuditLogs.Add([PSCustomObject]@{
                             Message = "Created position: [$($currentPosition.$TitleCode)] with orgunits: [$($departmentIds)]"
                             IsError = $false
                         })
-                } else {
+                }
+                else {
                     $differentOrgUnits = Compare-Object -ReferenceObject @($targetPosition.belongstoorgunits | Select-Object) -DifferenceObject @($departmentIds | Select-Object)
                     if ($differentOrgUnits.InputObject.count -gt 0) {
                         $orgUnitIdsToAdd = $differentOrgUnits | Where-Object -Property SideIndicator -eq '=>'
                         
-                        if($null -ne $orgUnitIdsToAdd.InputObject) {
-                        	$allOrgUnitIdsForPosition = ($targetPosition.belongstoorgunits += $orgUnitIdsToAdd.InputObject)
+                        if ($null -ne $orgUnitIdsToAdd.InputObject) {
+                            $allOrgUnitIdsForPosition = ($targetPosition.belongstoorgunits += $orgUnitIdsToAdd.InputObject)
                         }
-                        if($null -eq $orgUnitIdsToAdd.InputObject) {
-                        	$allOrgUnitIdsForPosition = $targetPosition.belongstoorgunits
+                        if ($null -eq $orgUnitIdsToAdd.InputObject) {
+                            $allOrgUnitIdsForPosition = $targetPosition.belongstoorgunits
                         }
                         
                         $body = @{
@@ -265,79 +270,68 @@ try {
                         }
 
                         $splatUpdatePositionsParams = @{
-                            Uri         = "$($config.BaseUrl)/api/v2/hrm/positions/$($targetPosition.id)"
+                            Uri         = "$($actionContext.Configuration.BaseUrl)/api/v2/hrm/positions/$($targetPosition.id)"
                             Method      = 'PUT'
                             Headers     = $Headers
                             Body        = ($body | ConvertTo-Json)
                             ContentType = 'application/json; charset=utf-8'
                         }
-                        $positionsResponse = Invoke-RestMethod @splatUpdatePositionsParams -Verbose:$false # Exception not found
-                        $auditLogs.Add([PSCustomObject]@{
-                                Message = "Added orgunits: [$($allOrgUnitIdsForPosition)] to position: [$($currentPosition.$TitleCode)]"
-                                IsError = $false
-                            })
-
-                    } else {
+                        #filter to prevent unneccessary logging
+                        if ($null -ne $orgUnitIdsToAdd.InputObject) {
+                            $positionsResponse = Invoke-RestMethod @splatUpdatePositionsParams -Verbose:$false # Exception not found
+                            $outputContext.AuditLogs.Add([PSCustomObject]@{
+                                    Message = "Added orgunits: [$($allOrgUnitIdsForPosition)] to position: [$($currentPosition.InceptionPositionCode)]"
+                                    IsError = $false
+                                })
+                        }
+                    }
+                    else {
                         if ($targetPosition.state -ne 20) {
                             $body = @{
                                 $state = 20
                             }
 
                             $splatUpdatePositionsParams = @{
-                                Uri         = "$($config.BaseUrl)/api/v2/hrm/positions/$($targetPosition.id)"
+                                Uri         = "$($actionContext.Configuration.BaseUrl)/api/v2/hrm/positions/$($targetPosition.id)"
                                 Method      = 'PUT'
                                 Headers     = $Headers
                                 Body        = ($body | ConvertTo-Json)
                                 ContentType = 'application/json; charset=utf-8'
                             }
                             $positionsResponse = Invoke-RestMethod @splatUpdatePositionsParams -Verbose:$false # Exception not found
-                        } else {
-                            Write-Verbose "skipping action orgunit already added to position [$($currentPosition.$TitleCode)]"
+                        }
+                        else {
+                            Write-Verbose 'skipping action orgunit already added to position [$($currentPosition.$TitleCode)]'
                         }
                     }
                 }
             }
-
-            $success = $true
-        } catch {
-            $success = $false
-            $ex = $PSItem
-            if ($($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or
-                $($ex.Exception.GetType().FullName -eq 'System.Net.WebException')) {
-                $errorObj = Resolve-InceptionError -ErrorObject $ex
-                $auditMessage = "Could not create Inception resource. Error: $($errorObj.FriendlyMessage)"
-                Write-Verbose "Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
-            } else {
-                $auditMessage = "Could not create Inception resource. Error: $($ex.Exception.Message)"
-                Write-Verbose "Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)"
-            }
-            $auditLogs.Add([PSCustomObject]@{
-                    Message = $auditMessage
-                    IsError = $true
-                })
         }
+        else {
+            Write-Verbose "[DryRun] Create [$($resource)] Inception resource, will be executed during enforcement"
+        }            
     }
-} catch {
-    $success = $false
+}
+catch {
     $ex = $PSItem
     if ($($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or
         $($ex.Exception.GetType().FullName -eq 'System.Net.WebException')) {
         $errorObj = Resolve-InceptionError -ErrorObject $ex
         $auditMessage = "Could not create Inception resource. Error: $($errorObj.FriendlyMessage)"
         Write-Verbose "Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
-    } else {
+    }
+    else {
         $auditMessage = "Could not create Inception resource. Error: $($ex.Exception.Message)"
         Write-Verbose "Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)"
     }
-    $auditLogs.Add([PSCustomObject]@{
+    $outputContext.AuditLogs.Add([PSCustomObject]@{
             Message = $auditMessage
             IsError = $true
         })
-    # End
-} finally {
-    $result = [PSCustomObject]@{
-        Success   = $success
-        Auditlogs = $auditLogs
+}
+finally {
+    # Check if auditLogs contains errors, if no errors are found, set success to true
+    if (-not($outputContext.AuditLogs.IsError -contains $true)) {
+        $outputContext.Success = $true
     }
-    Write-Output $result | ConvertTo-Json -Depth 10
 }
