@@ -3,6 +3,10 @@
 # PowerShell V2
 # Version: 2.0.0
 ####################################################
+
+# Set to false at start, because only when no error occurs it is set to true
+$outputContext.Success = $false
+
 # Enable TLS1.2
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
 
@@ -159,7 +163,6 @@ function Get-InceptionOrgunits {
 
 
 Write-Verbose "Creating [$($resourceContext.SourceData.Count)] resources"
-$outputContext.Success = $true
 try {
     <# Resource creation preview uses a timeout of 30 seconds while actual run has timeout of 10 minutes #>
     $headers = @{
@@ -305,12 +308,11 @@ try {
             }
         }
         else {
-            Write-Verbose "[DryRun] Create [$($resource)] Inception resource, will be executed during enforcement" -Verbose
+            Write-Verbose "[DryRun] Create [$($resource)] Inception resource, will be executed during enforcement"
         }            
     }
 }
 catch {
-    $outputContext.Success = $false
     $ex = $PSItem
     if ($($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or
         $($ex.Exception.GetType().FullName -eq 'System.Net.WebException')) {
@@ -326,5 +328,10 @@ catch {
             Message = $auditMessage
             IsError = $true
         })
-}    
-
+}
+finally {
+    # Check if auditLogs contains errors, if no errors are found, set success to true
+    if (-not($outputContext.AuditLogs.IsError -contains $true)) {
+        $outputContext.Success = $true
+    }
+}
